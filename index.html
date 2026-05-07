@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Extractor DeLaval</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0d1117;
+    --surface:   #161b22;
+    --surface2:  #1c2333;
+    --border:    #30363d;
+    --accent:    #1f6feb;
+    --accent2:   #388bfd;
+    --green:     #3fb950;
+    --yellow:    #d29922;
+    --red:       #f85149;
+    --text:      #e6edf3;
+    --muted:     #8b949e;
+    --mono:      'IBM Plex Mono', monospace;
+    --sans:      'IBM Plex Sans', sans-serif;
+  }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Grid de fondo ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 40px 40px;
+    opacity: 0.18;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── Header ── */
+  header {
+    position: relative;
+    z-index: 1;
+    border-bottom: 1px solid var(--border);
+    padding: 0 2rem;
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    height: 64px;
+    background: rgba(13,17,23,0.85);
+    backdrop-filter: blur(12px);
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--text);
+    letter-spacing: -0.02em;
+  }
+
+  .logo-icon {
+    width: 28px; height: 28px;
+    background: var(--accent);
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+
+  .badge {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 2px 8px;
+    border-radius: 20px;
+  }
+
+  /* ── Main layout ── */
+  main {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    max-width: 1000px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 2.5rem 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  /* ── Drop zone ── */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 3rem 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: var(--surface);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .drop-zone::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 50% 0%, rgba(31,111,235,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: var(--surface2);
+  }
+
+  .drop-zone.drag-over {
+    border-color: var(--green);
+  }
+
+  .drop-icon {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    display: block;
+    filter: grayscale(0.3);
+  }
+
+  .drop-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 0.4rem;
+  }
+
+  .drop-sub {
+    font-size: 0.85rem;
+    color: var(--muted);
+    font-family: var(--mono);
+  }
+
+  .btn-browse {
+    display: inline-block;
+    margin-top: 1.2rem;
+    padding: 0.5rem 1.4rem;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-family: var(--sans);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .btn-browse:hover { background: var(--accent2); }
+
+  #file-input { display: none; }
+
+  /* ── Panel de estado ── */
+  .status-panel {
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.4rem;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    color: var(--muted);
+    line-height: 1.8;
+    max-height: 140px;
+    overflow-y: auto;
+  }
+
+  .status-panel.visible { display: block; }
+  .log-ok   { color: var(--green); }
+  .log-warn { color: var(--yellow); }
+  .log-err  { color: var(--red); }
+
+  /* ── Toolbar ── */
+  .toolbar {
+    display: none;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .toolbar.visible { display: flex; }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.55rem 1.2rem;
+    border-radius: 6px;
+    font-family: var(--sans);
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+  .btn-primary:hover { background: var(--accent2); }
+
+  .btn-excel {
+    background: #1a3d1a;
+    color: var(--green);
+    border-color: #2a5e2a;
+  }
+  .btn-excel:hover { background: #204820; }
+
+  .btn-csv {
+    background: var(--surface2);
+    color: var(--text);
+    border-color: var(--border);
+  }
+  .btn-csv:hover { background: var(--surface); border-color: var(--muted); }
+
+  .btn-reset {
+    background: transparent;
+    color: var(--muted);
+    border-color: var(--border);
+    margin-left: auto;
+  }
+  .btn-reset:hover { color: var(--red); border-color: var(--red); }
+
+  .item-count {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--muted);
+    padding: 0.4rem 0.8rem;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+
+  .item-count span { color: var(--green); font-weight: 600; }
+
+  /* ── Tabla ── */
+  .table-wrap {
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .table-wrap.visible { display: block; }
+
+  .table-scroll { overflow-x: auto; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.83rem;
+  }
+
+  thead {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+  }
+
+  th {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 0.65rem 1rem;
+    border-bottom: 1px solid rgba(48,54,61,0.6);
+    color: var(--text);
+    white-space: nowrap;
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  tr:hover td { background: rgba(31,111,235,0.05); }
+
+  .td-item   { font-family: var(--mono); color: var(--muted); font-size: 0.75rem; }
+  .td-mat    { font-family: var(--mono); font-weight: 600; color: var(--accent2); }
+  .td-desc   { color: var(--text); max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+  .td-num    { font-family: var(--mono); text-align: right; }
+  .td-net    { font-family: var(--mono); text-align: right; color: var(--green); font-weight: 600; }
+  .td-total  { font-family: var(--mono); text-align: right; font-weight: 600; }
+  .td-unit   { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+
+  /* ── Empty state ── */
+  .empty {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+
+  /* ── Footer ── */
+  footer {
+    position: relative; z-index: 1;
+    border-top: 1px solid var(--border);
+    padding: 1rem 2rem;
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--muted);
+    font-family: var(--mono);
+  }
+
+  /* ── Spinner ── */
+  .spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid rgba(255,255,255,0.2);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Animación entrada ── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .fade-up { animation: fadeUp 0.35s ease both; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">⚙</div>
+    extractor-delaval
+  </div>
+  <div class="badge">v1.0</div>
+</header>
+
+<main>
+
+  <!-- Drop zone -->
+  <div class="drop-zone fade-up" id="drop-zone">
+    <span class="drop-icon">📄</span>
+    <div class="drop-title">Arrastrá el PDF acá</div>
+    <div class="drop-sub">facturas y órdenes de compra DeLaval</div>
+    <button class="btn-browse" onclick="document.getElementById('file-input').click()">
+      Seleccionar archivo
+    </button>
+    <input type="file" id="file-input" accept=".pdf">
+  </div>
+
+  <!-- Log de estado -->
+  <div class="status-panel" id="status-panel"></div>
+
+  <!-- Toolbar con botones de descarga -->
+  <div class="toolbar" id="toolbar">
+    <div class="item-count" id="item-count"><span>0</span> ítems encontrados</div>
+    <button class="btn btn-excel" id="btn-excel" onclick="descargarExcel()">
+      ⬇ Descargar Excel
+    </button>
+    <button class="btn btn-csv" id="btn-csv" onclick="descargarCSV()">
+      ⬇ Descargar CSV
+    </button>
+    <button class="btn btn-reset" onclick="resetear()">
+      ✕ Nuevo archivo
+    </button>
+  </div>
+
+  <!-- Tabla de resultados -->
+  <div class="table-wrap fade-up" id="table-wrap">
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th>Material</th>
+            <th>Descripción</th>
+            <th>Cantidad</th>
+            <th>Ud.</th>
+            <th style="text-align:right">Gross</th>
+            <th style="text-align:right">Net</th>
+            <th style="text-align:right">Total</th>
+          </tr>
+        </thead>
+        <tbody id="tabla-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  Los archivos se procesan localmente en tu navegador — ningún dato se sube a internet
+</footer>
+
+<script>
+// ── Configurar PDF.js ──────────────────────────────────
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ── Estado global ──────────────────────────────────────
+let itemsGlobal = [];
+let nombreArchivo = '';
+
+// ── Regex (mismo que el script Python) ────────────────
+const NUM = String.raw`\d+(?:[.,]\d+)?`;
+const UNITS = 'PC|KG|SET|L|M|BOX|BAG|UNIT|PAR|ROL|ST';
+
+const RE_ITEM = new RegExp(
+  String.raw`^(\d{4})\s+(\d{7,13})\s+(.+?)` +
+  String.raw`\s+(${NUM})\s*(${UNITS})` +
+  String.raw`\s+(${NUM})\s+(${NUM})\s+(${NUM})$`,
+  'i'
+);
+const RE_ITEM_NODIS = new RegExp(
+  String.raw`^(\d{4})\s+(\d{7,13})\s+(.+?)` +
+  String.raw`\s+(${NUM})\s*(${UNITS})` +
+  String.raw`\s+(${NUM})\s+(${NUM})$`,
+  'i'
+);
+
+function norm(v) { return v ? v.trim().replace(',', '.') : ''; }
+
+function extraerItems(texto) {
+  const items = [];
+  for (const raw of texto.split('\n')) {
+    const linea = raw.trim();
+    let m = linea.match(RE_ITEM);
+    if (m) {
+      items.push({
+        item: m[1], material: m[2], description: m[3].trim(),
+        quantity: norm(m[4]), unit: m[5].toUpperCase(),
+        gross: norm(m[6]), net: norm(m[7]), total: norm(m[8])
+      });
+      continue;
+    }
+    m = linea.match(RE_ITEM_NODIS);
+    if (m) {
+      items.push({
+        item: m[1], material: m[2], description: m[3].trim(),
+        quantity: norm(m[4]), unit: m[5].toUpperCase(),
+        gross: '', net: norm(m[6]), total: norm(m[7])
+      });
+    }
+  }
+  return items;
+}
+
+// ── Leer PDF ──────────────────────────────────────────
+async function leerPDF(file) {
+  const buffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+  log(`📄 ${file.name} — ${pdf.numPages} página(s)`);
+  let textoTotal = '';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    // Reconstruir líneas agrupando por Y position
+    const items = content.items;
+    const lines = {};
+    for (const item of items) {
+      const y = Math.round(item.transform[5]);
+      if (!lines[y]) lines[y] = [];
+      lines[y].push(item.str);
+    }
+    const ys = Object.keys(lines).map(Number).sort((a, b) => b - a);
+    for (const y of ys) {
+      textoTotal += lines[y].join(' ') + '\n';
+    }
+    log(`  Página ${i}: OK`);
+  }
+  return textoTotal;
+}
+
+// ── Procesar archivo ──────────────────────────────────
+async function procesarArchivo(file) {
+  if (!file || !file.name.endsWith('.pdf')) {
+    log('⚠ Solo se aceptan archivos PDF', 'warn'); return;
+  }
+  resetUI();
+  nombreArchivo = file.name.replace('.pdf', '');
+  mostrarStatus();
+
+  log(`⏳ Procesando...`);
+
+  try {
+    const texto = await leerPDF(file);
+    const items = extraerItems(texto);
+
+    if (items.length === 0) {
+      log('⚠ No se encontraron ítems. ¿Es una factura DeLaval?', 'warn');
+      return;
+    }
+
+    itemsGlobal = items;
+    log(`✅ ${items.length} ítem(s) extraídos correctamente`, 'ok');
+    renderTabla(items);
+    mostrarToolbar(items.length);
+
+  } catch (e) {
+    log(`❌ Error: ${e.message}`, 'err');
+  }
+}
+
+// ── UI helpers ────────────────────────────────────────
+const panel  = document.getElementById('status-panel');
+const toolbar = document.getElementById('toolbar');
+const tableWrap = document.getElementById('table-wrap');
+const tbody  = document.getElementById('tabla-body');
+const countEl = document.getElementById('item-count').querySelector('span');
+
+function log(msg, tipo = '') {
+  const d = document.createElement('div');
+  d.textContent = msg;
+  if (tipo === 'ok')   d.className = 'log-ok';
+  if (tipo === 'warn') d.className = 'log-warn';
+  if (tipo === 'err')  d.className = 'log-err';
+  panel.appendChild(d);
+  panel.scrollTop = panel.scrollHeight;
+}
+
+function mostrarStatus() { panel.classList.add('visible'); }
+
+function mostrarToolbar(n) {
+  countEl.textContent = n;
+  toolbar.classList.add('visible');
+  tableWrap.classList.add('visible');
+}
+
+function resetUI() {
+  panel.innerHTML = '';
+  tbody.innerHTML = '';
+  panel.classList.remove('visible');
+  toolbar.classList.remove('visible');
+  tableWrap.classList.remove('visible');
+  itemsGlobal = [];
+}
+
+function resetear() {
+  resetUI();
+  document.getElementById('file-input').value = '';
+}
+
+function renderTabla(items) {
+  tbody.innerHTML = '';
+  for (const it of items) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="td-item">${it.item}</td>
+      <td class="td-mat">${it.material}</td>
+      <td class="td-desc" title="${it.description}">${it.description}</td>
+      <td class="td-num">${it.quantity}</td>
+      <td class="td-unit">${it.unit}</td>
+      <td class="td-num">${it.gross}</td>
+      <td class="td-net">${it.net}</td>
+      <td class="td-total">${it.total}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+// ── Descargas ─────────────────────────────────────────
+function descargarExcel() {
+  const COLS = ['item','material','description','quantity','unit','gross','net','total'];
+  const HEADS = ['Item','Material','Descripción','Cantidad','Unidad','Gross','Net','Total'];
+  const data = [HEADS, ...itemsGlobal.map(it => COLS.map(c => {
+    const v = it[c];
+    if (['quantity','gross','net','total'].includes(c) && v !== '') {
+      const n = parseFloat(v);
+      return isNaN(n) ? v : n;
+    }
+    return v;
+  }))];
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  // Ancho de columnas
+  ws['!cols'] = [8,14,40,10,7,10,10,10].map(w => ({ wch: w }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Items DeLaval');
+  XLSX.writeFile(wb, `${nombreArchivo}_items.xlsx`);
+}
+
+function descargarCSV() {
+  const COLS = ['item','material','description','quantity','unit','gross','net','total'];
+  const HEADS = ['Item','Material','Descripción','Cantidad','Unidad','Gross','Net','Total'];
+  const rows = [HEADS, ...itemsGlobal.map(it => COLS.map(c => it[c]))];
+  const csv = rows.map(r => r.join(';')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${nombreArchivo}_items.csv`;
+  a.click();
+}
+
+// ── Drag & Drop ──────────────────────────────────────
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  dropZone.classList.add('drag-over');
+});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) procesarArchivo(file);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) procesarArchivo(fileInput.files[0]);
+});
+dropZone.addEventListener('click', e => {
+  if (e.target.tagName !== 'BUTTON') fileInput.click();
+});
+</script>
+</body>
+</html>
