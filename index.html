@@ -301,6 +301,7 @@
     <div class="item-count" id="item-count"><span>0</span> ítems encontrados</div>
     <button class="btn btn-excel" id="btn-excel" onclick="descargarExcel()">⬇ Descargar Excel</button>
     <button class="btn btn-csv" id="btn-csv" onclick="descargarCSV()">⬇ Descargar CSV</button>
+    <button class="btn btn-csv" id="btn-ocr" onclick="descargarOCRraw()" style="display:none">⬇ OCR raw</button>
     <button class="btn btn-reset" onclick="resetear()">✕ Nuevo archivo</button>
   </div>
 
@@ -336,6 +337,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
 // ── Estado global ─────────────────────────────────────
 let itemsGlobal = [];
 let nombreArchivo = '';
+let ocrTextosPorPagina = []; // guardado para descarga de diagnóstico
 
 // ── Patrones reutilizables ────────────────────────────
 // Acepta unidades comunes en facturas DeLaval. EA = each.
@@ -478,9 +480,10 @@ async function ocrTodoElPDF(pdf) {
     }
   });
 
-  // Configuración: mantener espacios entre palabras y modo automático
+  // PSM 6 = "Assume a single uniform block of text" — funciona mejor con tablas
+  // que el modo AUTO, que a veces parte la página en columnas y descoloca los datos
   await worker.setParameters({
-    tessedit_pageseg_mode: Tesseract.PSM.AUTO,
+    tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK,
     preserve_interword_spaces: '1'
   });
 
@@ -490,7 +493,7 @@ async function ocrTodoElPDF(pdf) {
     for (let i = 1; i <= pdf.numPages; i++) {
       mostrarProgreso(`OCR página ${i} de ${pdf.numPages}...`, Math.round(((i - 1) / pdf.numPages) * 100));
       const page = await pdf.getPage(i);
-      const canvas = await renderPagina(page, 2);
+      const canvas = await renderPagina(page, 2.5); // mayor escala = mejor reconocimiento
       const { data: { text } } = await worker.recognize(canvas);
       textosPorPagina.push(text);
     }
@@ -511,47 +514,101 @@ function preprocesarTextoOCR(texto) {
     .replace(/\bI(\d{3,4})\b/g, '1$1');
 }
 
-// Intenta extraer ítem/material/cantidad/net/total de una línea. Más permissive que la versión vieja.
+// Intenta extraer ítem/material/cantidad/net/total/descripción inline de una línea
+// Usa enfoque por tokens (más tolerante a ruido OCR entre los campos)
 function parsearLineaItem(linea) {
-  // Busca cualquier ocurrencia de "4 dígitos + espacio + 7-13 dígitos" en la línea (no anclado al inicio)
-  const m = linea.match(/(\d{4})\s+(\d{7,13})\s+(.+)$/);
-  if (!m) return null;
-  const item = m[1], material = m[2], resto = m[3];
+  const tokens = linea.split(/\s+/).filter(Boolean);
 
-  // Cantidad: \d{1,4}[.,]\d{1,2}  ó  \d{1,4}  (seguida opcionalmente por unidad)
-  const qtyM = resto.match(new RegExp(
-    '(\\d{1,4}(?:[.,]\\d{1,2})?)\\s*(' + UNIT_LIST + ')?\\b',
-    'i'
-  ));
-  if (!qtyM) return null;
-  const qty = qtyM[1];
-  const unit = qtyM[2] ? qtyM[2].toUpperCase() : '';
+  // Buscar par (item ID, material) — permite hasta 3 tokens entre ellos por si OCR mete basura
+  let itemIdx = -1, matIdx = -1;
+  for (let i = 0; i < tokens.length; i++) {
+    if (!RE_ITEM_ID.test(tokens[i])) continue;
+    for (let j = i + 1; j <= Math.min(i + 3, tokens.length - 1); j++) {
+      if (RE_MATERIAL.test(tokens[j])) { itemIdx = i; matIdx = j; break; }
+    }
+    if (itemIdx !== -1) break;
+  }
+  if (itemIdx === -1) return null;
 
-  const afterQty = resto.substring(qtyM.index + qtyM[0].length);
+  // Después del material: cantidad + (opcional) unidad
+  const reCombined = new RegExp('^(\\d{1,4}(?:[.,]\\d{1,2})?)(' + UNIT_LIST + ')$', 'i');
+  let qty = null, unit = '', qtyEndIdx = -1;
+  for (let i = matIdx + 1; i < tokens.length; i++) {
+    const t = tokens[i];
+    const c = t.match(reCombined);
+    if (c) { qty = c[1]; unit = c[2].toUpperCase(); qtyEndIdx = i; break; }
+    if (/^\d{1,4}(?:[.,]\d{1,2})?$/.test(t)) {
+      qty = t;
+      if (i + 1 < tokens.length && RE_UNIT.test(tokens[i + 1])) {
+        unit = tokens[i + 1].toUpperCase(); qtyEndIdx = i + 1;
+      } else {
+        qtyEndIdx = i;
+      }
+      break;
+    }
+  }
+  if (qty === null) return null;
 
-  // Buscar números plausibles después de la cantidad. Aceptamos:
-  //   1.004,00  /  1,004.00  /  1234,56  /  47,36  /  4736
-  const nums = afterQty.match(/-?\d{1,3}(?:[.\s]\d{3})*[,.]\d{1,2}|-?\d+/g) || [];
-  // Filtrar: preferir números con decimal; si solo tenemos enteros, igual los aceptamos (luego validamos)
-  if (nums.length < 2) return null;
+  // Después de la cantidad: índices de los tokens que parecen números (gross, discount, net, total)
+  const numIdx = [];
+  for (let i = qtyEndIdx + 1; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (/^-?\d{1,3}(?:[.\s]\d{3})*[,.]\d{1,2}$/.test(t) || /^-?\d{1,5}$/.test(t)) {
+      numIdx.push(i);
+    }
+  }
+  if (numIdx.length < 2) return null;
+
+  const lastNum = numIdx[numIdx.length - 1];
+  const net = tokens[numIdx[numIdx.length - 2]];
+  const total = tokens[lastNum];
+
+  // Si después del último número quedan tokens, son la descripción inline
+  // (OCR a veces mete la descripción en la misma línea que los números)
+  const inline = tokens.slice(lastNum + 1).join(' ').trim();
 
   return {
-    item, material, unit,
+    item: tokens[itemIdx],
+    material: tokens[matIdx],
     quantity: qty,
-    net: nums[nums.length - 2],
-    total: nums[nums.length - 1]
+    unit,
+    net, total,
+    inlineDescription: inline
   };
+}
+
+// Convierte un entero "puro" en formato con 2 decimales: "593" → "5,93", "85" → "0,85"
+// Asume que en facturas DeLaval los precios SIEMPRE tienen 2 decimales,
+// así que un entero sin coma es un OCR comecomas.
+function fixDecimal(s) {
+  if (!s) return s;
+  if (/[,.]/.test(s)) return s;
+  if (!/^-?\d+$/.test(s)) return s;
+  if (s.length < 2) return s;
+  const sign = s[0] === '-' ? '-' : '';
+  const num = s.replace('-', '');
+  if (num.length === 2) return sign + '0,' + num;
+  return sign + num.slice(0, -2) + ',' + num.slice(-2);
 }
 
 // Verifica que cantidad × net ≈ total. Si no, prueba correcciones por OCR (coma perdida).
 function corregirAritmetica(it) {
+  // Pre-fix: enteros sin coma en net/total → asumimos que las últimas 2 cifras son decimales
+  const origNet = it.net, origTot = it.total;
+  it = { ...it, net: fixDecimal(it.net), total: fixDecimal(it.total) };
+  const fixedByDecimal = (origNet !== it.net) || (origTot !== it.total);
+
   const qty = parseFloat(norm(it.quantity));
   const netRaw = parseFloat(norm(it.net));
   const totRaw = parseFloat(norm(it.total));
-  if (!isFinite(qty) || !isFinite(netRaw) || !isFinite(totRaw) || qty === 0) return it;
+  if (!isFinite(qty) || !isFinite(netRaw) || !isFinite(totRaw) || qty === 0) {
+    return fixedByDecimal ? { ...it, __corregido: true } : it;
+  }
 
   const tol = (a, b) => Math.abs(a - b) <= Math.max(0.02, Math.abs(b) * 0.005);
-  if (tol(qty * netRaw, totRaw)) return it;
+  if (tol(qty * netRaw, totRaw)) {
+    return fixedByDecimal ? { ...it, __corregido: true } : it;
+  }
 
   // Variantes a probar: dividir/multiplicar net o total por 100 / 1000
   // (típicas de comas decimales perdidas o duplicadas en el OCR)
@@ -602,26 +659,31 @@ function extraerItemsDeTexto(texto) {
   const yaUsados = new Set();
 
   for (let i = 0; i < lineas.length; i++) {
-    let parsed = parsearLineaItem(lineas[i]);
-
-    // Fallback: la fila puede haber quedado partida en dos líneas
-    if (!parsed && i + 1 < lineas.length) {
-      parsed = parsearLineaItem(lineas[i] + ' ' + lineas[i + 1]);
+    // Probar parseo con la línea sola, y luego combinándola con 1, 2, 3 líneas siguientes
+    let parsed = null;
+    let consumido = 1;
+    for (let extra = 0; extra <= 3 && i + extra < lineas.length; extra++) {
+      const linea = lineas.slice(i, i + extra + 1).join(' ');
+      parsed = parsearLineaItem(linea);
+      if (parsed) { consumido = extra + 1; break; }
     }
-
     if (!parsed) continue;
 
     const clave = `${parsed.item}|${parsed.material}`;
     if (yaUsados.has(clave)) continue;
     yaUsados.add(clave);
 
-    parsed.description = buscarDescripcionTexto(lineas, i);
+    // Descripción: primero la inline (si OCR pegó la descripción al final de la línea),
+    // si no, buscar en las siguientes líneas
+    let description = parsed.inlineDescription || '';
+    if (!description) description = buscarDescripcionTexto(lineas, i + consumido - 1);
+
     parsed = corregirAritmetica(parsed);
 
     items.push({
       item: parsed.item,
       material: parsed.material,
-      description: parsed.description,
+      description,
       quantity: norm(parsed.quantity),
       net: norm(parsed.net),
       total: norm(parsed.total),
@@ -668,6 +730,7 @@ async function procesarArchivo(file) {
     if (items.length === 0) {
       log('▸ Cambiando a OCR (esto puede tardar 1-3 minutos)...', 'step');
       const textosPorPagina = await ocrTodoElPDF(pdf);
+      ocrTextosPorPagina = textosPorPagina; // guardar para descarga
       const totalChars = textosPorPagina.reduce((s, t) => s + t.length, 0);
       log(`  OCR generó ${totalChars.toLocaleString()} caracteres de texto`, 'dim');
       ocultarProgreso();
@@ -675,6 +738,7 @@ async function procesarArchivo(file) {
       // Parsear página por página y reportar
       const yaUsados = new Set();
       let totalCorr = 0;
+      const paginasVacias = [];
       for (let p = 0; p < textosPorPagina.length; p++) {
         const itemsPag = extraerItemsDeTexto(textosPorPagina[p]);
         let agregados = 0, corregidos = 0;
@@ -687,11 +751,22 @@ async function procesarArchivo(file) {
           agregados++;
         }
         totalCorr += corregidos;
+        if (agregados === 0) paginasVacias.push(p + 1);
         log(`  Página ${p + 1}: ${agregados} ítem(s)${corregidos ? ` (${corregidos} con números corregidos)` : ''}`, 'dim');
       }
       items.sort((a, b) => a.item.localeCompare(b.item));
       if (totalCorr > 0) {
-        log(`  ${totalCorr} ítem(s) tuvieron números corregidos por validación aritmética`, 'dim');
+        log(`  ${totalCorr} ítem(s) con números autocorregidos`, 'dim');
+      }
+
+      // Volcar primeras 15 líneas de la primera página vacía como diagnóstico
+      if (paginasVacias.length > 0) {
+        const muestra = paginasVacias[0];
+        log(`▸ Páginas sin ítems: ${paginasVacias.join(', ')}`, 'warn');
+        log(`  Muestra del OCR de la página ${muestra} (primeras 15 líneas):`, 'dim');
+        const lineas = (textosPorPagina[muestra - 1] || '').split('\n').filter(l => l.trim()).slice(0, 15);
+        for (const l of lineas) log(`  | ${l}`, 'dim');
+        log(`  Si querés que afine, descargá el OCR completo con el botón ⬇ OCR raw`, 'dim');
       }
     }
 
@@ -752,6 +827,8 @@ function mostrarToolbar(n) {
   countEl.textContent = n;
   toolbar.classList.add('visible');
   tableWrap.classList.add('visible');
+  // Mostrar botón "OCR raw" solo si tenemos texto OCR guardado
+  document.getElementById('btn-ocr').style.display = ocrTextosPorPagina.length ? '' : 'none';
 }
 
 function resetUI() {
@@ -762,6 +839,8 @@ function resetUI() {
   tableWrap.classList.remove('visible');
   ocultarProgreso();
   itemsGlobal = [];
+  ocrTextosPorPagina = [];
+  document.getElementById('btn-ocr').style.display = 'none';
 }
 
 function resetear() {
@@ -812,6 +891,18 @@ function descargarExcel() {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Items DeLaval');
   XLSX.writeFile(wb, `${nombreArchivo}_items.xlsx`);
+}
+
+function descargarOCRraw() {
+  if (!ocrTextosPorPagina.length) return;
+  const texto = ocrTextosPorPagina
+    .map((t, i) => `===== PÁGINA ${i + 1} =====\n${t}`)
+    .join('\n\n');
+  const blob = new Blob([texto], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${nombreArchivo}_ocr_raw.txt`;
+  a.click();
 }
 
 function descargarCSV() {
