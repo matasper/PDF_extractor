@@ -35,7 +35,6 @@
     flex-direction: column;
   }
 
-  /* ── Grid de fondo ── */
   body::before {
     content: '';
     position: fixed;
@@ -49,7 +48,6 @@
     z-index: 0;
   }
 
-  /* ── Header ── */
   header {
     position: relative;
     z-index: 1;
@@ -92,7 +90,6 @@
     border-radius: 20px;
   }
 
-  /* ── Main layout ── */
   main {
     position: relative;
     z-index: 1;
@@ -106,7 +103,6 @@
     gap: 1.5rem;
   }
 
-  /* ── Drop zone ── */
   .drop-zone {
     border: 2px dashed var(--border);
     border-radius: 12px;
@@ -175,7 +171,6 @@
 
   #file-input { display: none; }
 
-  /* ── Panel de estado ── */
   .status-panel {
     display: none;
     background: var(--surface);
@@ -195,7 +190,6 @@
   .log-warn { color: var(--yellow); }
   .log-err  { color: var(--red); }
 
-  /* ── Toolbar ── */
   .toolbar {
     display: none;
     align-items: center;
@@ -260,7 +254,6 @@
 
   .item-count span { color: var(--green); font-weight: 600; }
 
-  /* ── Tabla ── */
   .table-wrap {
     display: none;
     background: var(--surface);
@@ -311,13 +304,11 @@
 
   .td-item   { font-family: var(--mono); color: var(--muted); font-size: 0.75rem; }
   .td-mat    { font-family: var(--mono); font-weight: 600; color: var(--accent2); }
-  .td-desc   { color: var(--text); max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+  .td-desc   { color: var(--text); max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
   .td-num    { font-family: var(--mono); text-align: right; }
   .td-net    { font-family: var(--mono); text-align: right; color: var(--green); font-weight: 600; }
   .td-total  { font-family: var(--mono); text-align: right; font-weight: 600; }
-  .td-unit   { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
 
-  /* ── Empty state ── */
   .empty {
     text-align: center;
     padding: 4rem 2rem;
@@ -325,7 +316,6 @@
     font-size: 0.9rem;
   }
 
-  /* ── Footer ── */
   footer {
     position: relative; z-index: 1;
     border-top: 1px solid var(--border);
@@ -336,7 +326,6 @@
     font-family: var(--mono);
   }
 
-  /* ── Spinner ── */
   .spinner {
     display: inline-block;
     width: 14px; height: 14px;
@@ -348,7 +337,6 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ── Animación entrada ── */
   @keyframes fadeUp {
     from { opacity: 0; transform: translateY(12px); }
     to   { opacity: 1; transform: translateY(0); }
@@ -363,7 +351,7 @@
     <div class="logo-icon">⚙</div>
     extractor-delaval
   </div>
-  <div class="badge">v1.0</div>
+  <div class="badge">v1.1</div>
 </header>
 
 <main>
@@ -406,8 +394,6 @@
             <th>Material</th>
             <th>Descripción</th>
             <th>Cantidad</th>
-            <th>Ud.</th>
-            <th style="text-align:right">Gross</th>
             <th style="text-align:right">Net</th>
             <th style="text-align:right">Total</th>
           </tr>
@@ -432,46 +418,56 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
 let itemsGlobal = [];
 let nombreArchivo = '';
 
-// ── Regex (mismo que el script Python) ────────────────
-const NUM = String.raw`\d+(?:[.,]\d+)?`;
-const UNITS = 'PC|KG|SET|L|M|BOX|BAG|UNIT|PAR|ROL|ST';
+// ── Regex ──────────────────────────────────────────────
+// Acepta: 20,00 / 1.004,00 / 31.880,98 / 0,49
+const NUM = String.raw`\d{1,3}(?:\.\d{3})*(?:,\d+)?`;
+// Unidades vistas en facturas DeLaval (PC, SET, M, SU, KIT, CAN, BOX, etc.)
+const UNITS = 'PC|KG|SET|L|M|BOX|BAG|UNIT|PAR|ROL|ST|SU|KIT|CAN';
 
-const RE_ITEM = new RegExp(
-  String.raw`^(\d{4})\s+(\d{7,13})\s+(.+?)` +
-  String.raw`\s+(${NUM})\s*(${UNITS})` +
-  String.raw`\s+(${NUM})\s+(${NUM})\s+(${NUM})$`,
-  'i'
-);
-const RE_ITEM_NODIS = new RegExp(
-  String.raw`^(\d{4})\s+(\d{7,13})\s+(.+?)` +
-  String.raw`\s+(${NUM})\s*(${UNITS})` +
-  String.raw`\s+(${NUM})\s+(${NUM})$`,
+// Línea principal del ítem: nro_item, material, qty, unit, net, total
+// (gross y discount aparecen en blanco en estas facturas, por eso quedan los 2 últimos números)
+const RE_ITEM_LINE = new RegExp(
+  String.raw`^(\d{4})\s+(\d{7,13})\s+(${NUM})\s*(${UNITS})\s+(${NUM})\s+(${NUM})\s*$`,
   'i'
 );
 
-function norm(v) { return v ? v.trim().replace(',', '.') : ''; }
+// Líneas que NO son descripción (metadata a saltar)
+const RE_SKIP = /^(Country of (origin|dispatch)|Preference\s*:|net weight\s*:)/i;
+
+// Convierte "1.004,00" → 1004.00 ; "20,00" → 20.00
+function norm(v) {
+  if (!v) return '';
+  return v.trim().replace(/\./g, '').replace(',', '.');
+}
 
 function extraerItems(texto) {
   const items = [];
-  for (const raw of texto.split('\n')) {
-    const linea = raw.trim();
-    let m = linea.match(RE_ITEM);
-    if (m) {
-      items.push({
-        item: m[1], material: m[2], description: m[3].trim(),
-        quantity: norm(m[4]), unit: m[5].toUpperCase(),
-        gross: norm(m[6]), net: norm(m[7]), total: norm(m[8])
-      });
-      continue;
+  const lineas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+  for (let i = 0; i < lineas.length; i++) {
+    const m = lineas[i].match(RE_ITEM_LINE);
+    if (!m) continue;
+
+    const item = {
+      item: m[1],
+      material: m[2],
+      description: '',
+      quantity: norm(m[3]),
+      net: norm(m[5]),
+      total: norm(m[6])
+    };
+
+    // Buscar la descripción en la siguiente línea no-metadata,
+    // y deteneros si nos cruzamos con otro ítem.
+    for (let j = i + 1; j < lineas.length; j++) {
+      const next = lineas[j];
+      if (RE_ITEM_LINE.test(next)) break;
+      if (RE_SKIP.test(next)) continue;
+      item.description = next;
+      break;
     }
-    m = linea.match(RE_ITEM_NODIS);
-    if (m) {
-      items.push({
-        item: m[1], material: m[2], description: m[3].trim(),
-        quantity: norm(m[4]), unit: m[5].toUpperCase(),
-        gross: '', net: norm(m[6]), total: norm(m[7])
-      });
-    }
+
+    items.push(item);
   }
   return items;
 }
@@ -482,21 +478,38 @@ async function leerPDF(file) {
   const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
   log(`📄 ${file.name} — ${pdf.numPages} página(s)`);
   let textoTotal = '';
+  const Y_TOL = 2; // tolerancia en puntos para considerar que dos fragmentos están en la misma línea
+
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    // Reconstruir líneas agrupando por Y position
-    const items = content.items;
-    const lines = {};
-    for (const item of items) {
-      const y = Math.round(item.transform[5]);
-      if (!lines[y]) lines[y] = [];
-      lines[y].push(item.str);
+
+    // Ordenar fragmentos: por Y descendente (de arriba hacia abajo en coords PDF),
+    // y dentro de la misma fila, por X ascendente (izquierda a derecha)
+    const sorted = content.items.slice().sort((a, b) => {
+      const dy = b.transform[5] - a.transform[5];
+      if (Math.abs(dy) > Y_TOL) return dy;
+      return a.transform[4] - b.transform[4];
+    });
+
+    // Agrupar por línea según tolerancia de Y
+    const lines = [];
+    let currentLine = [];
+    let currentY = null;
+    for (const it of sorted) {
+      const y = it.transform[5];
+      if (currentY === null || Math.abs(y - currentY) <= Y_TOL) {
+        currentLine.push(it.str);
+        if (currentY === null) currentY = y;
+      } else {
+        lines.push(currentLine.join(' ').replace(/\s+/g, ' ').trim());
+        currentLine = [it.str];
+        currentY = y;
+      }
     }
-    const ys = Object.keys(lines).map(Number).sort((a, b) => b - a);
-    for (const y of ys) {
-      textoTotal += lines[y].join(' ') + '\n';
-    }
+    if (currentLine.length) lines.push(currentLine.join(' ').replace(/\s+/g, ' ').trim());
+
+    textoTotal += lines.join('\n') + '\n';
     log(`  Página ${i}: OK`);
   }
   return textoTotal;
@@ -504,11 +517,11 @@ async function leerPDF(file) {
 
 // ── Procesar archivo ──────────────────────────────────
 async function procesarArchivo(file) {
-  if (!file || !file.name.endsWith('.pdf')) {
+  if (!file || !file.name.toLowerCase().endsWith('.pdf')) {
     log('⚠ Solo se aceptan archivos PDF', 'warn'); return;
   }
   resetUI();
-  nombreArchivo = file.name.replace('.pdf', '');
+  nombreArchivo = file.name.replace(/\.pdf$/i, '');
   mostrarStatus();
 
   log(`⏳ Procesando...`);
@@ -580,8 +593,6 @@ function renderTabla(items) {
       <td class="td-mat">${it.material}</td>
       <td class="td-desc" title="${it.description}">${it.description}</td>
       <td class="td-num">${it.quantity}</td>
-      <td class="td-unit">${it.unit}</td>
-      <td class="td-num">${it.gross}</td>
       <td class="td-net">${it.net}</td>
       <td class="td-total">${it.total}</td>
     `;
@@ -591,30 +602,32 @@ function renderTabla(items) {
 
 // ── Descargas ─────────────────────────────────────────
 function descargarExcel() {
-  const COLS = ['item','material','description','quantity','unit','gross','net','total'];
-  const HEADS = ['Item','Material','Descripción','Cantidad','Unidad','Gross','Net','Total'];
+  const COLS = ['item','material','description','quantity','net','total'];
+  const HEADS = ['Item','Material','Descripción','Cantidad','Net','Total'];
   const data = [HEADS, ...itemsGlobal.map(it => COLS.map(c => {
     const v = it[c];
-    if (['quantity','gross','net','total'].includes(c) && v !== '') {
+    if (['quantity','net','total'].includes(c) && v !== '') {
       const n = parseFloat(v);
       return isNaN(n) ? v : n;
     }
     return v;
   }))];
   const ws = XLSX.utils.aoa_to_sheet(data);
-  // Ancho de columnas
-  ws['!cols'] = [8,14,40,10,7,10,10,10].map(w => ({ wch: w }));
+  ws['!cols'] = [8, 14, 44, 10, 12, 12].map(w => ({ wch: w }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Items DeLaval');
   XLSX.writeFile(wb, `${nombreArchivo}_items.xlsx`);
 }
 
 function descargarCSV() {
-  const COLS = ['item','material','description','quantity','unit','gross','net','total'];
-  const HEADS = ['Item','Material','Descripción','Cantidad','Unidad','Gross','Net','Total'];
+  const COLS = ['item','material','description','quantity','net','total'];
+  const HEADS = ['Item','Material','Descripción','Cantidad','Net','Total'];
   const rows = [HEADS, ...itemsGlobal.map(it => COLS.map(c => it[c]))];
-  const csv = rows.map(r => r.join(';')).join('\n');
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const csv = rows.map(r => r.map(v => {
+    const s = String(v ?? '');
+    return /[;"\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+  }).join(';')).join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `${nombreArchivo}_items.csv`;
