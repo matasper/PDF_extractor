@@ -6,6 +6,7 @@
 <title>Extractor DeLaval</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -31,21 +32,16 @@
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
-    display: flex;
-    flex-direction: column;
+    display: flex; flex-direction: column;
   }
 
   body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
+    content: ''; position: fixed; inset: 0;
     background-image:
       linear-gradient(var(--border) 1px, transparent 1px),
       linear-gradient(90deg, var(--border) 1px, transparent 1px);
     background-size: 40px 40px;
-    opacity: 0.18;
-    pointer-events: none;
-    z-index: 0;
+    opacity: 0.18; pointer-events: none; z-index: 0;
   }
 
   header {
@@ -92,8 +88,7 @@
     cursor: pointer;
     transition: all 0.2s ease;
     background: var(--surface);
-    position: relative;
-    overflow: hidden;
+    position: relative; overflow: hidden;
   }
 
   .drop-zone::before {
@@ -106,7 +101,6 @@
     border-color: var(--accent);
     background: var(--surface2);
   }
-
   .drop-zone.drag-over { border-color: var(--green); }
 
   .drop-icon { font-size: 2.5rem; margin-bottom: 1rem; display: block; filter: grayscale(0.3); }
@@ -115,17 +109,11 @@
 
   .btn-browse {
     display: inline-block;
-    margin-top: 1.2rem;
-    padding: 0.5rem 1.4rem;
-    background: var(--accent);
-    color: white;
-    border: none;
-    border-radius: 6px;
-    font-family: var(--sans);
-    font-size: 0.9rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.15s;
+    margin-top: 1.2rem; padding: 0.5rem 1.4rem;
+    background: var(--accent); color: white;
+    border: none; border-radius: 6px;
+    font-family: var(--sans); font-size: 0.9rem; font-weight: 600;
+    cursor: pointer; transition: background 0.15s;
   }
   .btn-browse:hover { background: var(--accent2); }
 
@@ -143,58 +131,74 @@
     line-height: 1.7;
     max-height: 240px;
     overflow-y: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
+    white-space: pre-wrap; word-break: break-word;
   }
   .status-panel.visible { display: block; }
-  .log-ok   { color: var(--green); }
-  .log-warn { color: var(--yellow); }
-  .log-err  { color: var(--red); }
-  .log-dim  { color: #6e7681; font-size: 0.72rem; }
+  .log-ok    { color: var(--green); }
+  .log-warn  { color: var(--yellow); }
+  .log-err   { color: var(--red); }
+  .log-dim   { color: #6e7681; font-size: 0.72rem; }
+  .log-step  { color: var(--accent2); font-weight: 600; }
+
+  /* Barra de progreso */
+  .progress-wrap {
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.85rem 1.2rem;
+  }
+  .progress-wrap.visible { display: block; }
+  .progress-label {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-bottom: 0.5rem;
+    display: flex; justify-content: space-between;
+  }
+  .progress-bar {
+    height: 6px;
+    background: var(--surface2);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    width: 0%;
+    transition: width 0.3s ease;
+  }
 
   .toolbar {
     display: none;
-    align-items: center;
-    gap: 0.75rem;
+    align-items: center; gap: 0.75rem;
     flex-wrap: wrap;
   }
   .toolbar.visible { display: flex; }
 
   .btn {
     display: inline-flex; align-items: center; gap: 0.4rem;
-    padding: 0.55rem 1.2rem;
-    border-radius: 6px;
+    padding: 0.55rem 1.2rem; border-radius: 6px;
     font-family: var(--sans); font-size: 0.88rem; font-weight: 600;
-    cursor: pointer;
-    border: 1px solid transparent;
+    cursor: pointer; border: 1px solid transparent;
     transition: all 0.15s;
   }
-
   .btn-excel {
-    background: #1a3d1a;
-    color: var(--green);
-    border-color: #2a5e2a;
+    background: #1a3d1a; color: var(--green); border-color: #2a5e2a;
   }
   .btn-excel:hover { background: #204820; }
-
   .btn-csv {
-    background: var(--surface2);
-    color: var(--text);
-    border-color: var(--border);
+    background: var(--surface2); color: var(--text); border-color: var(--border);
   }
   .btn-csv:hover { background: var(--surface); border-color: var(--muted); }
-
   .btn-reset {
-    background: transparent;
-    color: var(--muted);
-    border-color: var(--border);
+    background: transparent; color: var(--muted); border-color: var(--border);
     margin-left: auto;
   }
   .btn-reset:hover { color: var(--red); border-color: var(--red); }
 
   .item-count {
-    font-family: var(--mono);
-    font-size: 0.8rem;
+    font-family: var(--mono); font-size: 0.8rem;
     color: var(--muted);
     padding: 0.4rem 0.8rem;
     background: var(--surface2);
@@ -267,7 +271,7 @@
     <div class="logo-icon">⚙</div>
     extractor-delaval
   </div>
-  <div class="badge">v2.0</div>
+  <div class="badge">v3.0 + OCR</div>
 </header>
 
 <main>
@@ -275,7 +279,7 @@
   <div class="drop-zone fade-up" id="drop-zone">
     <span class="drop-icon">📄</span>
     <div class="drop-title">Arrastrá el PDF acá</div>
-    <div class="drop-sub">facturas y órdenes de compra DeLaval</div>
+    <div class="drop-sub">facturas DeLaval (digitales o escaneadas)</div>
     <button class="btn-browse" onclick="document.getElementById('file-input').click()">
       Seleccionar archivo
     </button>
@@ -283,6 +287,15 @@
   </div>
 
   <div class="status-panel" id="status-panel"></div>
+
+  <!-- Barra de progreso -->
+  <div class="progress-wrap" id="progress-wrap">
+    <div class="progress-label">
+      <span id="progress-text">Procesando...</span>
+      <span id="progress-percent">0%</span>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+  </div>
 
   <div class="toolbar" id="toolbar">
     <div class="item-count" id="item-count"><span>0</span> ítems encontrados</div>
@@ -325,25 +338,32 @@ let itemsGlobal = [];
 let nombreArchivo = '';
 
 // ── Patrones reutilizables ────────────────────────────
-const RE_ITEM_ID  = /^\d{4}$/;                              // 0010, 0020, ...
-const RE_MATERIAL = /^\d{7,13}$/;                           // 26010477, 2150043360, ...
-const RE_NUM      = /^-?\d{1,3}(?:\.\d{3})*(?:,\d+)?$/;     // 20,00 / 1.004,00 / 31.880,98
-const RE_UNIT     = /^(PC|KG|SET|L|M|BOX|BAG|UNIT|PAR|ROL|ST|SU|KIT|CAN|EA)$/i;
-const RE_QTY_UNIT = /^(\d{1,3}(?:[.,]\d+)?)\s*(PC|KG|SET|L|M|BOX|BAG|UNIT|PAR|ROL|ST|SU|KIT|CAN|EA)$/i;
+// Acepta unidades comunes en facturas DeLaval. EA = each.
+const UNIT_LIST = 'PC|KG|SET|L|M|BOX|BAG|UNIT|PAR|ROL|ST|SU|KIT|CAN|EA';
+const RE_ITEM_ID  = /^\d{4}$/;
+const RE_MATERIAL = /^\d{7,13}$/;
+const RE_NUM      = /^-?\d{1,3}(?:[.\s]\d{3})*(?:,\d+)?$/;
+const RE_UNIT     = new RegExp('^(' + UNIT_LIST + ')$', 'i');
+const RE_QTY_UNIT = new RegExp('^(\\d{1,3}(?:[.,]\\d+)?)\\s*(' + UNIT_LIST + ')$', 'i');
 const RE_SKIP     = /^(country of (origin|dispatch)|preference\s*:|net weight\s*:)/i;
-const Y_TOL       = 3; // tolerancia en puntos para agrupar fragmentos en la misma fila
+// Línea completa parseada como un solo bloque (ideal para texto OCR)
+const RE_LINE_FULL = new RegExp(
+  '^(\\d{4})\\s+(\\d{7,13})\\s+(\\d{1,3}(?:[.,]\\d+)?)\\s*(' + UNIT_LIST + ')\\s+(.+)$',
+  'i'
+);
+const Y_TOL = 3;
 
-// "1.004,00" → "1004.00" ; "20,00" → "20.00" ; "" → ""
+// "1.004,00" → "1004.00" ; "20,00" → "20.00"
 function norm(v) {
   if (v == null) return '';
-  return String(v).trim().replace(/\./g, '').replace(',', '.');
+  return String(v).trim().replace(/[.\s]/g, '').replace(',', '.');
 }
 
-// ── Leer PDF: devuelve fragmentos {str, x, y, page} ──
-async function leerFragmentosPDF(file) {
-  const buffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-  log(`📄 ${file.name} — ${pdf.numPages} página(s)`);
+// ──────────────────────────────────────────────────────
+// MÉTODO 1: Extracción por coordenadas (PDFs digitales)
+// ──────────────────────────────────────────────────────
+
+async function leerFragmentosPDF(pdf) {
   const fragmentos = [];
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
@@ -351,45 +371,31 @@ async function leerFragmentosPDF(file) {
     for (const it of content.items) {
       const s = (it.str || '').trim();
       if (!s) continue;
-      fragmentos.push({
-        str: s,
-        x: it.transform[4],
-        y: it.transform[5],
-        page: p
-      });
+      fragmentos.push({ str: s, x: it.transform[4], y: it.transform[5], page: p });
     }
-    log(`  Página ${p}: ${content.items.length} fragmentos`);
   }
   return fragmentos;
 }
 
-// Devuelve todos los fragmentos de la misma página y misma fila Y (con tolerancia), ordenados por X
 function filaDe(fragmentos, ref) {
   return fragmentos
     .filter(f => f.page === ref.page && Math.abs(f.y - ref.y) <= Y_TOL)
     .sort((a, b) => a.x - b.x);
 }
 
-// Encuentra la descripción: primera fila debajo del ítem que no sea metadata
-function buscarDescripcion(fragmentos, candIdItem) {
-  // Fragmentos de la misma página que están debajo del candidato
+function buscarDescripcionPorCoords(fragmentos, cand) {
   const debajo = fragmentos
-    .filter(f => f.page === candIdItem.page && f.y < candIdItem.y - Y_TOL)
-    .sort((a, b) => b.y - a.y); // de arriba hacia abajo
-
+    .filter(f => f.page === cand.page && f.y < cand.y - Y_TOL)
+    .sort((a, b) => b.y - a.y);
   let i = 0;
   while (i < debajo.length) {
     const yGrupo = debajo[i].y;
     const grupo = [];
     while (i < debajo.length && Math.abs(debajo[i].y - yGrupo) <= Y_TOL) {
-      grupo.push(debajo[i]);
-      i++;
+      grupo.push(debajo[i]); i++;
     }
     grupo.sort((a, b) => a.x - b.x);
-
-    // Si encontramos otro ítem antes que la descripción, la descripción quedó vacía
     if (grupo.some(f => RE_ITEM_ID.test(f.str))) return '';
-
     const texto = grupo.map(f => f.str).join(' ').replace(/\s+/g, ' ').trim();
     if (!texto) continue;
     if (RE_SKIP.test(texto)) continue;
@@ -398,86 +404,159 @@ function buscarDescripcion(fragmentos, candIdItem) {
   return '';
 }
 
-// Parsea una fila de ítem y devuelve {material, qty, unit, net, total} o null
-function parsearFila(fila, candIdItem) {
-  // Empezar a leer DESPUÉS del candidato del ítem
-  const idxCand = fila.findIndex(f => f === candIdItem);
+function parsearFilaCoords(fila, cand) {
+  const idxCand = fila.findIndex(f => f === cand);
   const tokens = fila.slice(idxCand + 1).map(f => f.str);
-
-  let material = null;
-  let qty = null, unit = null;
-  const numeros = []; // gross, discount, net, total — los últimos dos son lo que queremos
-
+  let material = null, qty = null, unit = null;
+  const numeros = [];
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
-
-    if (!material) {
-      if (RE_MATERIAL.test(t)) material = t;
-      continue;
-    }
-
-    // Caso "20,00 PC" en un solo fragmento
+    if (!material) { if (RE_MATERIAL.test(t)) material = t; continue; }
     if (qty === null) {
       const combo = t.match(RE_QTY_UNIT);
-      if (combo) {
-        qty = combo[1];
-        unit = combo[2].toUpperCase();
-        continue;
-      }
-      // Caso "20,00" y "PC" en fragmentos separados
+      if (combo) { qty = combo[1]; unit = combo[2].toUpperCase(); continue; }
       if (RE_NUM.test(t) && i + 1 < tokens.length && RE_UNIT.test(tokens[i + 1])) {
-        qty = t;
-        unit = tokens[i + 1].toUpperCase();
-        i++;
-        continue;
+        qty = t; unit = tokens[i + 1].toUpperCase(); i++; continue;
       }
     }
-
     if (RE_NUM.test(t)) numeros.push(t);
   }
-
   if (!material || qty === null || numeros.length < 2) return null;
-
-  const total = numeros[numeros.length - 1];
-  const net   = numeros[numeros.length - 2];
-
-  return { material, qty, unit, net, total };
+  return {
+    material, qty, unit,
+    net: numeros[numeros.length - 2],
+    total: numeros[numeros.length - 1]
+  };
 }
 
-// Algoritmo principal: encuentra ítems por posición de cada candidato 4-dígitos
-function extraerItems(fragmentos) {
+function extraerItemsDeFragmentos(fragmentos) {
   const items = [];
-  const yaUsados = new Set(); // evitar duplicados (mismo ítem detectado dos veces)
-
+  const yaUsados = new Set();
   for (const cand of fragmentos) {
     if (!RE_ITEM_ID.test(cand.str)) continue;
-
     const fila = filaDe(fragmentos, cand);
-    const datos = parsearFila(fila, cand);
+    const datos = parsearFilaCoords(fila, cand);
     if (!datos) continue;
-
     const clave = `${cand.page}|${cand.str}|${datos.material}`;
     if (yaUsados.has(clave)) continue;
     yaUsados.add(clave);
-
-    const desc = buscarDescripcion(fragmentos, cand);
-
+    const desc = buscarDescripcionPorCoords(fragmentos, cand);
     items.push({
-      item: cand.str,
-      material: datos.material,
-      description: desc,
+      item: cand.str, material: datos.material, description: desc,
       quantity: norm(datos.qty),
-      net: norm(datos.net),
-      total: norm(datos.total)
+      net: norm(datos.net), total: norm(datos.total)
     });
   }
-
-  // Ordenar por código de ítem ascendente
   items.sort((a, b) => a.item.localeCompare(b.item));
   return items;
 }
 
-// ── Procesar archivo ──────────────────────────────────
+// ──────────────────────────────────────────────────────
+// MÉTODO 2: OCR (PDFs escaneados)
+// ──────────────────────────────────────────────────────
+
+async function renderPagina(pdfPage, scale = 2) {
+  const viewport = pdfPage.getViewport({ scale });
+  const canvas = document.createElement('canvas');
+  canvas.width  = viewport.width;
+  canvas.height = viewport.height;
+  const ctx = canvas.getContext('2d');
+  await pdfPage.render({ canvasContext: ctx, viewport }).promise;
+  return canvas;
+}
+
+async function ocrTodoElPDF(pdf, onPagina) {
+  log('Inicializando motor OCR (puede tardar la primera vez)...', 'step');
+  mostrarProgreso('Cargando datos OCR...', 0);
+
+  const worker = await Tesseract.createWorker('eng', 1, {
+    logger: m => {
+      // m.status puede ser "loading tesseract core", "initializing api", "recognizing text", etc.
+      if (m.status && m.progress != null) {
+        if (m.status === 'recognizing text') return; // gestionamos progreso por página afuera
+        actualizarProgreso(m.status, Math.round(m.progress * 100));
+      }
+    }
+  });
+
+  // Configuración: priorizar exactitud de números y mantener espacios
+  await worker.setParameters({
+    tessedit_pageseg_mode: Tesseract.PSM.AUTO,
+    preserve_interword_spaces: '1'
+  });
+
+  let textoCompleto = '';
+  try {
+    for (let i = 1; i <= pdf.numPages; i++) {
+      mostrarProgreso(`OCR página ${i} de ${pdf.numPages}...`, Math.round(((i - 1) / pdf.numPages) * 100));
+      const page = await pdf.getPage(i);
+      const canvas = await renderPagina(page, 2);
+      const { data: { text } } = await worker.recognize(canvas);
+      textoCompleto += text + '\n';
+      onPagina && onPagina(i, pdf.numPages);
+    }
+    mostrarProgreso('OCR completo', 100);
+  } finally {
+    await worker.terminate();
+  }
+  return textoCompleto;
+}
+
+// Parser de texto plano (línea por línea), tolerante a errores típicos del OCR
+function extraerItemsDeTexto(texto) {
+  const lineas = texto.split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(l => l.length > 0);
+  const items = [];
+
+  for (let i = 0; i < lineas.length; i++) {
+    const m = lineas[i].match(RE_LINE_FULL);
+    if (!m) continue;
+
+    // m[5] es "el resto" después de cantidad+unidad: contiene gross/discount/net/total
+    // Tomamos los dos últimos números encontrados
+    const nums = m[5].match(/-?\d{1,3}(?:[.\s]\d{3})*(?:,\d{1,3})?(?:\.\d{1,3})?/g);
+    const validos = (nums || []).filter(n => /[,.]\d{2}/.test(n) || /^\d+$/.test(n));
+    if (validos.length < 2) continue;
+
+    const total = validos[validos.length - 1];
+    const net   = validos[validos.length - 2];
+
+    // Buscar descripción en la siguiente línea no-metadata
+    let description = '';
+    for (let j = i + 1; j < lineas.length; j++) {
+      const next = lineas[j];
+      if (RE_LINE_FULL.test(next)) break;
+      if (RE_SKIP.test(next)) continue;
+      description = next;
+      break;
+    }
+
+    items.push({
+      item: m[1],
+      material: m[2],
+      description,
+      quantity: norm(m[3]),
+      net: norm(net),
+      total: norm(total)
+    });
+  }
+
+  // Eliminar duplicados por (item + material)
+  const vistos = new Set();
+  const unicos = [];
+  for (const it of items) {
+    const k = `${it.item}|${it.material}`;
+    if (vistos.has(k)) continue;
+    vistos.add(k);
+    unicos.push(it);
+  }
+  unicos.sort((a, b) => a.item.localeCompare(b.item));
+  return unicos;
+}
+
+// ──────────────────────────────────────────────────────
+// Procesar archivo (orquesta los dos métodos)
+// ──────────────────────────────────────────────────────
+
 async function procesarArchivo(file) {
   if (!file || !file.name.toLowerCase().endsWith('.pdf')) {
     log('⚠ Solo se aceptan archivos PDF', 'warn'); return;
@@ -485,21 +564,40 @@ async function procesarArchivo(file) {
   resetUI();
   nombreArchivo = file.name.replace(/\.pdf$/i, '');
   mostrarStatus();
-  log(`⏳ Procesando...`);
+  log(`📄 ${file.name}`, 'step');
 
   try {
-    const fragmentos = await leerFragmentosPDF(file);
-    log(`Total fragmentos: ${fragmentos.length}`, 'dim');
+    const buffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    log(`Páginas: ${pdf.numPages}`, 'dim');
 
-    const items = extraerItems(fragmentos);
+    // ── Intento 1: método rápido (PDF digital) ──
+    log('▸ Probando extracción directa de texto...', 'step');
+    const fragmentos = await leerFragmentosPDF(pdf);
+    log(`  ${fragmentos.length} fragmentos de texto encontrados`, 'dim');
+
+    let items = [];
+    if (fragmentos.length > 50) {
+      items = extraerItemsDeFragmentos(fragmentos);
+      log(`  ${items.length} ítems encontrados con método directo`, 'dim');
+    } else {
+      log(`  Texto insuficiente — el PDF probablemente es un escaneo`, 'warn');
+    }
+
+    // ── Intento 2: OCR si lo anterior falló ──
+    if (items.length === 0) {
+      log('▸ Cambiando a OCR (esto puede tardar 1-3 minutos)...', 'step');
+      const texto = await ocrTodoElPDF(pdf);
+      log(`  OCR generó ${texto.length.toLocaleString()} caracteres de texto`, 'dim');
+      items = extraerItemsDeTexto(texto);
+      log(`  ${items.length} ítems extraídos del OCR`, 'dim');
+      ocultarProgreso();
+    }
 
     if (items.length === 0) {
-      log('⚠ No se encontraron ítems con el algoritmo principal.', 'warn');
-      log('— Diagnóstico: muestra de los primeros 60 fragmentos de la página 1 —', 'dim');
-      const muestra = fragmentos.filter(f => f.page === 1).slice(0, 60);
-      for (const f of muestra) {
-        log(`  y=${f.y.toFixed(1)}  x=${f.x.toFixed(1)}  "${f.str}"`, 'dim');
-      }
+      log('⚠ No se encontraron ítems ni con OCR.', 'warn');
+      log('  Es posible que el formato de la factura sea distinto al esperado.', 'dim');
+      log('  Compartime una imagen del PDF y afino los patrones.', 'dim');
       return;
     }
 
@@ -511,15 +609,20 @@ async function procesarArchivo(file) {
   } catch (e) {
     log(`❌ Error: ${e.message}`, 'err');
     console.error(e);
+    ocultarProgreso();
   }
 }
 
 // ── UI helpers ────────────────────────────────────────
-const panel    = document.getElementById('status-panel');
-const toolbar  = document.getElementById('toolbar');
-const tableWrap= document.getElementById('table-wrap');
-const tbody    = document.getElementById('tabla-body');
-const countEl  = document.getElementById('item-count').querySelector('span');
+const panel        = document.getElementById('status-panel');
+const toolbar      = document.getElementById('toolbar');
+const tableWrap    = document.getElementById('table-wrap');
+const tbody        = document.getElementById('tabla-body');
+const countEl      = document.getElementById('item-count').querySelector('span');
+const progressWrap = document.getElementById('progress-wrap');
+const progressText = document.getElementById('progress-text');
+const progressPct  = document.getElementById('progress-percent');
+const progressFill = document.getElementById('progress-fill');
 
 function log(msg, tipo = '') {
   const d = document.createElement('div');
@@ -528,11 +631,21 @@ function log(msg, tipo = '') {
   if (tipo === 'warn') d.className = 'log-warn';
   if (tipo === 'err')  d.className = 'log-err';
   if (tipo === 'dim')  d.className = 'log-dim';
+  if (tipo === 'step') d.className = 'log-step';
   panel.appendChild(d);
   panel.scrollTop = panel.scrollHeight;
 }
 
 function mostrarStatus() { panel.classList.add('visible'); }
+
+function mostrarProgreso(label, pct) {
+  progressWrap.classList.add('visible');
+  progressText.textContent = label;
+  progressPct.textContent = pct + '%';
+  progressFill.style.width = pct + '%';
+}
+function actualizarProgreso(label, pct) { mostrarProgreso(label, pct); }
+function ocultarProgreso() { progressWrap.classList.remove('visible'); }
 
 function mostrarToolbar(n) {
   countEl.textContent = n;
@@ -546,6 +659,7 @@ function resetUI() {
   panel.classList.remove('visible');
   toolbar.classList.remove('visible');
   tableWrap.classList.remove('visible');
+  ocultarProgreso();
   itemsGlobal = [];
 }
 
@@ -561,7 +675,7 @@ function renderTabla(items) {
     tr.innerHTML = `
       <td class="td-item">${it.item}</td>
       <td class="td-mat">${it.material}</td>
-      <td class="td-desc" title="${it.description.replace(/"/g,'&quot;')}">${it.description}</td>
+      <td class="td-desc" title="${(it.description||'').replace(/"/g,'&quot;')}">${it.description||''}</td>
       <td class="td-num">${it.quantity}</td>
       <td class="td-net">${it.net}</td>
       <td class="td-total">${it.total}</td>
@@ -608,10 +722,7 @@ function descargarCSV() {
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 
-dropZone.addEventListener('dragover', e => {
-  e.preventDefault();
-  dropZone.classList.add('drag-over');
-});
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
 dropZone.addEventListener('drop', e => {
   e.preventDefault();
@@ -619,12 +730,8 @@ dropZone.addEventListener('drop', e => {
   const file = e.dataTransfer.files[0];
   if (file) procesarArchivo(file);
 });
-fileInput.addEventListener('change', () => {
-  if (fileInput.files[0]) procesarArchivo(fileInput.files[0]);
-});
-dropZone.addEventListener('click', e => {
-  if (e.target.tagName !== 'BUTTON') fileInput.click();
-});
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) procesarArchivo(fileInput.files[0]); });
+dropZone.addEventListener('click', e => { if (e.target.tagName !== 'BUTTON') fileInput.click(); });
 </script>
 </body>
 </html>
