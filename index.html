@@ -49,58 +49,39 @@
   }
 
   header {
-    position: relative;
-    z-index: 1;
+    position: relative; z-index: 1;
     border-bottom: 1px solid var(--border);
     padding: 0 2rem;
-    display: flex;
-    align-items: center;
-    gap: 1.5rem;
+    display: flex; align-items: center; gap: 1.5rem;
     height: 64px;
     background: rgba(13,17,23,0.85);
     backdrop-filter: blur(12px);
   }
 
   .logo {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    font-family: var(--mono);
-    font-weight: 600;
-    font-size: 1rem;
-    color: var(--text);
-    letter-spacing: -0.02em;
+    display: flex; align-items: center; gap: 0.6rem;
+    font-family: var(--mono); font-weight: 600; font-size: 1rem;
+    color: var(--text); letter-spacing: -0.02em;
   }
 
   .logo-icon {
     width: 28px; height: 28px;
-    background: var(--accent);
-    border-radius: 6px;
+    background: var(--accent); border-radius: 6px;
     display: flex; align-items: center; justify-content: center;
     font-size: 14px;
   }
 
   .badge {
-    font-family: var(--mono);
-    font-size: 0.65rem;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    color: var(--muted);
-    padding: 2px 8px;
-    border-radius: 20px;
+    font-family: var(--mono); font-size: 0.65rem;
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--muted); padding: 2px 8px; border-radius: 20px;
   }
 
   main {
-    position: relative;
-    z-index: 1;
-    flex: 1;
-    max-width: 1000px;
-    width: 100%;
-    margin: 0 auto;
+    position: relative; z-index: 1; flex: 1;
+    max-width: 1000px; width: 100%; margin: 0 auto;
     padding: 2.5rem 2rem;
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
+    display: flex; flex-direction: column; gap: 1.5rem;
   }
 
   .drop-zone {
@@ -116,9 +97,7 @@
   }
 
   .drop-zone::before {
-    content: '';
-    position: absolute;
-    inset: 0;
+    content: ''; position: absolute; inset: 0;
     background: radial-gradient(ellipse at 50% 0%, rgba(31,111,235,0.08) 0%, transparent 70%);
     pointer-events: none;
   }
@@ -128,29 +107,11 @@
     background: var(--surface2);
   }
 
-  .drop-zone.drag-over {
-    border-color: var(--green);
-  }
+  .drop-zone.drag-over { border-color: var(--green); }
 
-  .drop-icon {
-    font-size: 2.5rem;
-    margin-bottom: 1rem;
-    display: block;
-    filter: grayscale(0.3);
-  }
-
-  .drop-title {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: var(--text);
-    margin-bottom: 0.4rem;
-  }
-
-  .drop-sub {
-    font-size: 0.85rem;
-    color: var(--muted);
-    font-family: var(--mono);
-  }
+  .drop-icon { font-size: 2.5rem; margin-bottom: 1rem; display: block; filter: grayscale(0.3); }
+  .drop-title { font-size: 1.1rem; font-weight: 600; color: var(--text); margin-bottom: 0.4rem; }
+  .drop-sub { font-size: 0.85rem; color: var(--muted); font-family: var(--mono); }
 
   .btn-browse {
     display: inline-block;
@@ -166,7 +127,6 @@
     cursor: pointer;
     transition: background 0.15s;
   }
-
   .btn-browse:hover { background: var(--accent2); }
 
   #file-input { display: none; }
@@ -178,17 +138,19 @@
     border-radius: 10px;
     padding: 1rem 1.4rem;
     font-family: var(--mono);
-    font-size: 0.82rem;
+    font-size: 0.78rem;
     color: var(--muted);
-    line-height: 1.8;
-    max-height: 140px;
+    line-height: 1.7;
+    max-height: 240px;
     overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
   }
-
   .status-panel.visible { display: block; }
   .log-ok   { color: var(--green); }
   .log-warn { color: var(--yellow); }
   .log-err  { color: var(--red); }
+  .log-dim  { color: #6e7681; font-size: 0.72rem; }
 
   .toolbar {
     display: none;
@@ -196,29 +158,17 @@
     gap: 0.75rem;
     flex-wrap: wrap;
   }
-
   .toolbar.visible { display: flex; }
 
   .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
+    display: inline-flex; align-items: center; gap: 0.4rem;
     padding: 0.55rem 1.2rem;
     border-radius: 6px;
-    font-family: var(--sans);
-    font-size: 0.88rem;
-    font-weight: 600;
+    font-family: var(--sans); font-size: 0.88rem; font-weight: 600;
     cursor: pointer;
     border: 1px solid transparent;
     transition: all 0.15s;
   }
-
-  .btn-primary {
-    background: var(--accent);
-    color: white;
-    border-color: var(--accent);
-  }
-  .btn-primary:hover { background: var(--accent2); }
 
   .btn-excel {
     background: #1a3d1a;
@@ -251,7 +201,6 @@
     border: 1px solid var(--border);
     border-radius: 6px;
   }
-
   .item-count span { color: var(--green); font-weight: 600; }
 
   .table-wrap {
@@ -261,45 +210,30 @@
     border-radius: 10px;
     overflow: hidden;
   }
-
   .table-wrap.visible { display: block; }
-
   .table-scroll { overflow-x: auto; }
 
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.83rem;
-  }
+  table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
 
   thead {
     background: var(--surface2);
     border-bottom: 1px solid var(--border);
-    position: sticky;
-    top: 0;
+    position: sticky; top: 0;
   }
 
   th {
-    padding: 0.75rem 1rem;
-    text-align: left;
-    font-family: var(--mono);
-    font-size: 0.72rem;
-    font-weight: 600;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    padding: 0.75rem 1rem; text-align: left;
+    font-family: var(--mono); font-size: 0.72rem; font-weight: 600;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em;
     white-space: nowrap;
   }
 
   td {
     padding: 0.65rem 1rem;
     border-bottom: 1px solid rgba(48,54,61,0.6);
-    color: var(--text);
-    white-space: nowrap;
+    color: var(--text); white-space: nowrap;
   }
-
   tr:last-child td { border-bottom: none; }
-
   tr:hover td { background: rgba(31,111,235,0.05); }
 
   .td-item   { font-family: var(--mono); color: var(--muted); font-size: 0.75rem; }
@@ -308,13 +242,6 @@
   .td-num    { font-family: var(--mono); text-align: right; }
   .td-net    { font-family: var(--mono); text-align: right; color: var(--green); font-weight: 600; }
   .td-total  { font-family: var(--mono); text-align: right; font-weight: 600; }
-
-  .empty {
-    text-align: center;
-    padding: 4rem 2rem;
-    color: var(--muted);
-    font-size: 0.9rem;
-  }
 
   footer {
     position: relative; z-index: 1;
@@ -325,17 +252,6 @@
     color: var(--muted);
     font-family: var(--mono);
   }
-
-  .spinner {
-    display: inline-block;
-    width: 14px; height: 14px;
-    border: 2px solid rgba(255,255,255,0.2);
-    border-top-color: white;
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-    vertical-align: middle;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
 
   @keyframes fadeUp {
     from { opacity: 0; transform: translateY(12px); }
@@ -351,12 +267,11 @@
     <div class="logo-icon">⚙</div>
     extractor-delaval
   </div>
-  <div class="badge">v1.1</div>
+  <div class="badge">v2.0</div>
 </header>
 
 <main>
 
-  <!-- Drop zone -->
   <div class="drop-zone fade-up" id="drop-zone">
     <span class="drop-icon">📄</span>
     <div class="drop-title">Arrastrá el PDF acá</div>
@@ -367,24 +282,15 @@
     <input type="file" id="file-input" accept=".pdf">
   </div>
 
-  <!-- Log de estado -->
   <div class="status-panel" id="status-panel"></div>
 
-  <!-- Toolbar con botones de descarga -->
   <div class="toolbar" id="toolbar">
     <div class="item-count" id="item-count"><span>0</span> ítems encontrados</div>
-    <button class="btn btn-excel" id="btn-excel" onclick="descargarExcel()">
-      ⬇ Descargar Excel
-    </button>
-    <button class="btn btn-csv" id="btn-csv" onclick="descargarCSV()">
-      ⬇ Descargar CSV
-    </button>
-    <button class="btn btn-reset" onclick="resetear()">
-      ✕ Nuevo archivo
-    </button>
+    <button class="btn btn-excel" id="btn-excel" onclick="descargarExcel()">⬇ Descargar Excel</button>
+    <button class="btn btn-csv" id="btn-csv" onclick="descargarCSV()">⬇ Descargar CSV</button>
+    <button class="btn btn-reset" onclick="resetear()">✕ Nuevo archivo</button>
   </div>
 
-  <!-- Tabla de resultados -->
   <div class="table-wrap fade-up" id="table-wrap">
     <div class="table-scroll">
       <table>
@@ -410,109 +316,165 @@
 </footer>
 
 <script>
-// ── Configurar PDF.js ──────────────────────────────────
+// ── Configurar PDF.js ─────────────────────────────────
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-// ── Estado global ──────────────────────────────────────
+// ── Estado global ─────────────────────────────────────
 let itemsGlobal = [];
 let nombreArchivo = '';
 
-// ── Regex ──────────────────────────────────────────────
-// Acepta: 20,00 / 1.004,00 / 31.880,98 / 0,49
-const NUM = String.raw`\d{1,3}(?:\.\d{3})*(?:,\d+)?`;
-// Unidades vistas en facturas DeLaval (PC, SET, M, SU, KIT, CAN, BOX, etc.)
-const UNITS = 'PC|KG|SET|L|M|BOX|BAG|UNIT|PAR|ROL|ST|SU|KIT|CAN';
+// ── Patrones reutilizables ────────────────────────────
+const RE_ITEM_ID  = /^\d{4}$/;                              // 0010, 0020, ...
+const RE_MATERIAL = /^\d{7,13}$/;                           // 26010477, 2150043360, ...
+const RE_NUM      = /^-?\d{1,3}(?:\.\d{3})*(?:,\d+)?$/;     // 20,00 / 1.004,00 / 31.880,98
+const RE_UNIT     = /^(PC|KG|SET|L|M|BOX|BAG|UNIT|PAR|ROL|ST|SU|KIT|CAN|EA)$/i;
+const RE_QTY_UNIT = /^(\d{1,3}(?:[.,]\d+)?)\s*(PC|KG|SET|L|M|BOX|BAG|UNIT|PAR|ROL|ST|SU|KIT|CAN|EA)$/i;
+const RE_SKIP     = /^(country of (origin|dispatch)|preference\s*:|net weight\s*:)/i;
+const Y_TOL       = 3; // tolerancia en puntos para agrupar fragmentos en la misma fila
 
-// Línea principal del ítem: nro_item, material, qty, unit, net, total
-// (gross y discount aparecen en blanco en estas facturas, por eso quedan los 2 últimos números)
-const RE_ITEM_LINE = new RegExp(
-  String.raw`^(\d{4})\s+(\d{7,13})\s+(${NUM})\s*(${UNITS})\s+(${NUM})\s+(${NUM})\s*$`,
-  'i'
-);
-
-// Líneas que NO son descripción (metadata a saltar)
-const RE_SKIP = /^(Country of (origin|dispatch)|Preference\s*:|net weight\s*:)/i;
-
-// Convierte "1.004,00" → 1004.00 ; "20,00" → 20.00
+// "1.004,00" → "1004.00" ; "20,00" → "20.00" ; "" → ""
 function norm(v) {
-  if (!v) return '';
-  return v.trim().replace(/\./g, '').replace(',', '.');
+  if (v == null) return '';
+  return String(v).trim().replace(/\./g, '').replace(',', '.');
 }
 
-function extraerItems(texto) {
-  const items = [];
-  const lineas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-
-  for (let i = 0; i < lineas.length; i++) {
-    const m = lineas[i].match(RE_ITEM_LINE);
-    if (!m) continue;
-
-    const item = {
-      item: m[1],
-      material: m[2],
-      description: '',
-      quantity: norm(m[3]),
-      net: norm(m[5]),
-      total: norm(m[6])
-    };
-
-    // Buscar la descripción en la siguiente línea no-metadata,
-    // y deteneros si nos cruzamos con otro ítem.
-    for (let j = i + 1; j < lineas.length; j++) {
-      const next = lineas[j];
-      if (RE_ITEM_LINE.test(next)) break;
-      if (RE_SKIP.test(next)) continue;
-      item.description = next;
-      break;
-    }
-
-    items.push(item);
-  }
-  return items;
-}
-
-// ── Leer PDF ──────────────────────────────────────────
-async function leerPDF(file) {
+// ── Leer PDF: devuelve fragmentos {str, x, y, page} ──
+async function leerFragmentosPDF(file) {
   const buffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
   log(`📄 ${file.name} — ${pdf.numPages} página(s)`);
-  let textoTotal = '';
-  const Y_TOL = 2; // tolerancia en puntos para considerar que dos fragmentos están en la misma línea
-
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
+  const fragmentos = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
     const content = await page.getTextContent();
+    for (const it of content.items) {
+      const s = (it.str || '').trim();
+      if (!s) continue;
+      fragmentos.push({
+        str: s,
+        x: it.transform[4],
+        y: it.transform[5],
+        page: p
+      });
+    }
+    log(`  Página ${p}: ${content.items.length} fragmentos`);
+  }
+  return fragmentos;
+}
 
-    // Ordenar fragmentos: por Y descendente (de arriba hacia abajo en coords PDF),
-    // y dentro de la misma fila, por X ascendente (izquierda a derecha)
-    const sorted = content.items.slice().sort((a, b) => {
-      const dy = b.transform[5] - a.transform[5];
-      if (Math.abs(dy) > Y_TOL) return dy;
-      return a.transform[4] - b.transform[4];
-    });
+// Devuelve todos los fragmentos de la misma página y misma fila Y (con tolerancia), ordenados por X
+function filaDe(fragmentos, ref) {
+  return fragmentos
+    .filter(f => f.page === ref.page && Math.abs(f.y - ref.y) <= Y_TOL)
+    .sort((a, b) => a.x - b.x);
+}
 
-    // Agrupar por línea según tolerancia de Y
-    const lines = [];
-    let currentLine = [];
-    let currentY = null;
-    for (const it of sorted) {
-      const y = it.transform[5];
-      if (currentY === null || Math.abs(y - currentY) <= Y_TOL) {
-        currentLine.push(it.str);
-        if (currentY === null) currentY = y;
-      } else {
-        lines.push(currentLine.join(' ').replace(/\s+/g, ' ').trim());
-        currentLine = [it.str];
-        currentY = y;
+// Encuentra la descripción: primera fila debajo del ítem que no sea metadata
+function buscarDescripcion(fragmentos, candIdItem) {
+  // Fragmentos de la misma página que están debajo del candidato
+  const debajo = fragmentos
+    .filter(f => f.page === candIdItem.page && f.y < candIdItem.y - Y_TOL)
+    .sort((a, b) => b.y - a.y); // de arriba hacia abajo
+
+  let i = 0;
+  while (i < debajo.length) {
+    const yGrupo = debajo[i].y;
+    const grupo = [];
+    while (i < debajo.length && Math.abs(debajo[i].y - yGrupo) <= Y_TOL) {
+      grupo.push(debajo[i]);
+      i++;
+    }
+    grupo.sort((a, b) => a.x - b.x);
+
+    // Si encontramos otro ítem antes que la descripción, la descripción quedó vacía
+    if (grupo.some(f => RE_ITEM_ID.test(f.str))) return '';
+
+    const texto = grupo.map(f => f.str).join(' ').replace(/\s+/g, ' ').trim();
+    if (!texto) continue;
+    if (RE_SKIP.test(texto)) continue;
+    return texto;
+  }
+  return '';
+}
+
+// Parsea una fila de ítem y devuelve {material, qty, unit, net, total} o null
+function parsearFila(fila, candIdItem) {
+  // Empezar a leer DESPUÉS del candidato del ítem
+  const idxCand = fila.findIndex(f => f === candIdItem);
+  const tokens = fila.slice(idxCand + 1).map(f => f.str);
+
+  let material = null;
+  let qty = null, unit = null;
+  const numeros = []; // gross, discount, net, total — los últimos dos son lo que queremos
+
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+
+    if (!material) {
+      if (RE_MATERIAL.test(t)) material = t;
+      continue;
+    }
+
+    // Caso "20,00 PC" en un solo fragmento
+    if (qty === null) {
+      const combo = t.match(RE_QTY_UNIT);
+      if (combo) {
+        qty = combo[1];
+        unit = combo[2].toUpperCase();
+        continue;
+      }
+      // Caso "20,00" y "PC" en fragmentos separados
+      if (RE_NUM.test(t) && i + 1 < tokens.length && RE_UNIT.test(tokens[i + 1])) {
+        qty = t;
+        unit = tokens[i + 1].toUpperCase();
+        i++;
+        continue;
       }
     }
-    if (currentLine.length) lines.push(currentLine.join(' ').replace(/\s+/g, ' ').trim());
 
-    textoTotal += lines.join('\n') + '\n';
-    log(`  Página ${i}: OK`);
+    if (RE_NUM.test(t)) numeros.push(t);
   }
-  return textoTotal;
+
+  if (!material || qty === null || numeros.length < 2) return null;
+
+  const total = numeros[numeros.length - 1];
+  const net   = numeros[numeros.length - 2];
+
+  return { material, qty, unit, net, total };
+}
+
+// Algoritmo principal: encuentra ítems por posición de cada candidato 4-dígitos
+function extraerItems(fragmentos) {
+  const items = [];
+  const yaUsados = new Set(); // evitar duplicados (mismo ítem detectado dos veces)
+
+  for (const cand of fragmentos) {
+    if (!RE_ITEM_ID.test(cand.str)) continue;
+
+    const fila = filaDe(fragmentos, cand);
+    const datos = parsearFila(fila, cand);
+    if (!datos) continue;
+
+    const clave = `${cand.page}|${cand.str}|${datos.material}`;
+    if (yaUsados.has(clave)) continue;
+    yaUsados.add(clave);
+
+    const desc = buscarDescripcion(fragmentos, cand);
+
+    items.push({
+      item: cand.str,
+      material: datos.material,
+      description: desc,
+      quantity: norm(datos.qty),
+      net: norm(datos.net),
+      total: norm(datos.total)
+    });
+  }
+
+  // Ordenar por código de ítem ascendente
+  items.sort((a, b) => a.item.localeCompare(b.item));
+  return items;
 }
 
 // ── Procesar archivo ──────────────────────────────────
@@ -523,15 +485,21 @@ async function procesarArchivo(file) {
   resetUI();
   nombreArchivo = file.name.replace(/\.pdf$/i, '');
   mostrarStatus();
-
   log(`⏳ Procesando...`);
 
   try {
-    const texto = await leerPDF(file);
-    const items = extraerItems(texto);
+    const fragmentos = await leerFragmentosPDF(file);
+    log(`Total fragmentos: ${fragmentos.length}`, 'dim');
+
+    const items = extraerItems(fragmentos);
 
     if (items.length === 0) {
-      log('⚠ No se encontraron ítems. ¿Es una factura DeLaval?', 'warn');
+      log('⚠ No se encontraron ítems con el algoritmo principal.', 'warn');
+      log('— Diagnóstico: muestra de los primeros 60 fragmentos de la página 1 —', 'dim');
+      const muestra = fragmentos.filter(f => f.page === 1).slice(0, 60);
+      for (const f of muestra) {
+        log(`  y=${f.y.toFixed(1)}  x=${f.x.toFixed(1)}  "${f.str}"`, 'dim');
+      }
       return;
     }
 
@@ -542,15 +510,16 @@ async function procesarArchivo(file) {
 
   } catch (e) {
     log(`❌ Error: ${e.message}`, 'err');
+    console.error(e);
   }
 }
 
 // ── UI helpers ────────────────────────────────────────
-const panel  = document.getElementById('status-panel');
-const toolbar = document.getElementById('toolbar');
-const tableWrap = document.getElementById('table-wrap');
-const tbody  = document.getElementById('tabla-body');
-const countEl = document.getElementById('item-count').querySelector('span');
+const panel    = document.getElementById('status-panel');
+const toolbar  = document.getElementById('toolbar');
+const tableWrap= document.getElementById('table-wrap');
+const tbody    = document.getElementById('tabla-body');
+const countEl  = document.getElementById('item-count').querySelector('span');
 
 function log(msg, tipo = '') {
   const d = document.createElement('div');
@@ -558,6 +527,7 @@ function log(msg, tipo = '') {
   if (tipo === 'ok')   d.className = 'log-ok';
   if (tipo === 'warn') d.className = 'log-warn';
   if (tipo === 'err')  d.className = 'log-err';
+  if (tipo === 'dim')  d.className = 'log-dim';
   panel.appendChild(d);
   panel.scrollTop = panel.scrollHeight;
 }
@@ -591,7 +561,7 @@ function renderTabla(items) {
     tr.innerHTML = `
       <td class="td-item">${it.item}</td>
       <td class="td-mat">${it.material}</td>
-      <td class="td-desc" title="${it.description}">${it.description}</td>
+      <td class="td-desc" title="${it.description.replace(/"/g,'&quot;')}">${it.description}</td>
       <td class="td-num">${it.quantity}</td>
       <td class="td-net">${it.net}</td>
       <td class="td-total">${it.total}</td>
