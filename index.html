@@ -465,92 +465,172 @@ async function renderPagina(pdfPage, scale = 2) {
   return canvas;
 }
 
-async function ocrTodoElPDF(pdf, onPagina) {
+async function ocrTodoElPDF(pdf) {
   log('Inicializando motor OCR (puede tardar la primera vez)...', 'step');
   mostrarProgreso('Cargando datos OCR...', 0);
 
   const worker = await Tesseract.createWorker('eng', 1, {
     logger: m => {
-      // m.status puede ser "loading tesseract core", "initializing api", "recognizing text", etc.
       if (m.status && m.progress != null) {
-        if (m.status === 'recognizing text') return; // gestionamos progreso por página afuera
+        if (m.status === 'recognizing text') return;
         actualizarProgreso(m.status, Math.round(m.progress * 100));
       }
     }
   });
 
-  // Configuración: priorizar exactitud de números y mantener espacios
+  // Configuración: mantener espacios entre palabras y modo automático
   await worker.setParameters({
     tessedit_pageseg_mode: Tesseract.PSM.AUTO,
     preserve_interword_spaces: '1'
   });
 
-  let textoCompleto = '';
+  // Devuelve un array con el texto de cada página
+  const textosPorPagina = [];
   try {
     for (let i = 1; i <= pdf.numPages; i++) {
       mostrarProgreso(`OCR página ${i} de ${pdf.numPages}...`, Math.round(((i - 1) / pdf.numPages) * 100));
       const page = await pdf.getPage(i);
       const canvas = await renderPagina(page, 2);
       const { data: { text } } = await worker.recognize(canvas);
-      textoCompleto += text + '\n';
-      onPagina && onPagina(i, pdf.numPages);
+      textosPorPagina.push(text);
     }
     mostrarProgreso('OCR completo', 100);
   } finally {
     await worker.terminate();
   }
-  return textoCompleto;
+  return textosPorPagina;
 }
 
-// Parser de texto plano (línea por línea), tolerante a errores típicos del OCR
+// Pre-proceso para corregir errores típicos del OCR antes de parsear
+function preprocesarTextoOCR(texto) {
+  return texto
+    // Normalizar saltos múltiples y trim por línea
+    .split('\n').map(l => l.replace(/\s+/g, ' ').trim()).join('\n')
+    // O/o/I/l comunes → 0/1 cuando están en bloques numéricos plausibles (ej. al inicio de un código de ítem)
+    .replace(/\b[Oo](\d{3,4})\b/g, '0$1')
+    .replace(/\bI(\d{3,4})\b/g, '1$1');
+}
+
+// Intenta extraer ítem/material/cantidad/net/total de una línea. Más permissive que la versión vieja.
+function parsearLineaItem(linea) {
+  // Busca cualquier ocurrencia de "4 dígitos + espacio + 7-13 dígitos" en la línea (no anclado al inicio)
+  const m = linea.match(/(\d{4})\s+(\d{7,13})\s+(.+)$/);
+  if (!m) return null;
+  const item = m[1], material = m[2], resto = m[3];
+
+  // Cantidad: \d{1,4}[.,]\d{1,2}  ó  \d{1,4}  (seguida opcionalmente por unidad)
+  const qtyM = resto.match(new RegExp(
+    '(\\d{1,4}(?:[.,]\\d{1,2})?)\\s*(' + UNIT_LIST + ')?\\b',
+    'i'
+  ));
+  if (!qtyM) return null;
+  const qty = qtyM[1];
+  const unit = qtyM[2] ? qtyM[2].toUpperCase() : '';
+
+  const afterQty = resto.substring(qtyM.index + qtyM[0].length);
+
+  // Buscar números plausibles después de la cantidad. Aceptamos:
+  //   1.004,00  /  1,004.00  /  1234,56  /  47,36  /  4736
+  const nums = afterQty.match(/-?\d{1,3}(?:[.\s]\d{3})*[,.]\d{1,2}|-?\d+/g) || [];
+  // Filtrar: preferir números con decimal; si solo tenemos enteros, igual los aceptamos (luego validamos)
+  if (nums.length < 2) return null;
+
+  return {
+    item, material, unit,
+    quantity: qty,
+    net: nums[nums.length - 2],
+    total: nums[nums.length - 1]
+  };
+}
+
+// Verifica que cantidad × net ≈ total. Si no, prueba correcciones por OCR (coma perdida).
+function corregirAritmetica(it) {
+  const qty = parseFloat(norm(it.quantity));
+  const netRaw = parseFloat(norm(it.net));
+  const totRaw = parseFloat(norm(it.total));
+  if (!isFinite(qty) || !isFinite(netRaw) || !isFinite(totRaw) || qty === 0) return it;
+
+  const tol = (a, b) => Math.abs(a - b) <= Math.max(0.02, Math.abs(b) * 0.005);
+  if (tol(qty * netRaw, totRaw)) return it;
+
+  // Variantes a probar: dividir/multiplicar net o total por 100 / 1000
+  // (típicas de comas decimales perdidas o duplicadas en el OCR)
+  const candidatos = [
+    [netRaw / 100,  totRaw],
+    [netRaw / 1000, totRaw],
+    [netRaw,        totRaw / 100],
+    [netRaw,        totRaw / 1000],
+    [netRaw / 100,  totRaw / 100],
+    [netRaw * 100,  totRaw],
+    [netRaw,        totRaw * 100],
+  ];
+  for (const [n, t] of candidatos) {
+    if (tol(qty * n, t)) {
+      return { ...it, net: n.toFixed(2).replace('.', ','), total: t.toFixed(2).replace('.', ','), __corregido: true };
+    }
+  }
+  // Última opción: si tenemos qty y total bien, recalcular net = total / qty
+  if (totRaw > 0 && tol(qty * (totRaw / qty), totRaw)) {
+    const newNet = totRaw / qty;
+    return { ...it, net: newNet.toFixed(2).replace('.', ','), __corregido: true };
+  }
+  return it;
+}
+
+// Buscar la descripción en las líneas siguientes
+function buscarDescripcionTexto(lineas, idxItem) {
+  for (let j = idxItem + 1; j < Math.min(lineas.length, idxItem + 6); j++) {
+    const next = lineas[j];
+    if (!next) continue;
+    // Si encontramos otra fila de ítem, paramos
+    if (/(\d{4})\s+(\d{7,13})\s+\d/.test(next)) break;
+    if (RE_SKIP.test(next)) continue;
+    // Filtrar líneas que parecen ser solo números o muy cortas
+    if (next.length < 3) continue;
+    if (/^[\d\s.,-]+$/.test(next)) continue;
+    return next;
+  }
+  return '';
+}
+
+// Parser principal de texto OCR
 function extraerItemsDeTexto(texto) {
-  const lineas = texto.split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(l => l.length > 0);
+  texto = preprocesarTextoOCR(texto);
+  const lineas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
   const items = [];
+  const yaUsados = new Set();
 
   for (let i = 0; i < lineas.length; i++) {
-    const m = lineas[i].match(RE_LINE_FULL);
-    if (!m) continue;
+    let parsed = parsearLineaItem(lineas[i]);
 
-    // m[5] es "el resto" después de cantidad+unidad: contiene gross/discount/net/total
-    // Tomamos los dos últimos números encontrados
-    const nums = m[5].match(/-?\d{1,3}(?:[.\s]\d{3})*(?:,\d{1,3})?(?:\.\d{1,3})?/g);
-    const validos = (nums || []).filter(n => /[,.]\d{2}/.test(n) || /^\d+$/.test(n));
-    if (validos.length < 2) continue;
-
-    const total = validos[validos.length - 1];
-    const net   = validos[validos.length - 2];
-
-    // Buscar descripción en la siguiente línea no-metadata
-    let description = '';
-    for (let j = i + 1; j < lineas.length; j++) {
-      const next = lineas[j];
-      if (RE_LINE_FULL.test(next)) break;
-      if (RE_SKIP.test(next)) continue;
-      description = next;
-      break;
+    // Fallback: la fila puede haber quedado partida en dos líneas
+    if (!parsed && i + 1 < lineas.length) {
+      parsed = parsearLineaItem(lineas[i] + ' ' + lineas[i + 1]);
     }
 
+    if (!parsed) continue;
+
+    const clave = `${parsed.item}|${parsed.material}`;
+    if (yaUsados.has(clave)) continue;
+    yaUsados.add(clave);
+
+    parsed.description = buscarDescripcionTexto(lineas, i);
+    parsed = corregirAritmetica(parsed);
+
     items.push({
-      item: m[1],
-      material: m[2],
-      description,
-      quantity: norm(m[3]),
-      net: norm(net),
-      total: norm(total)
+      item: parsed.item,
+      material: parsed.material,
+      description: parsed.description,
+      quantity: norm(parsed.quantity),
+      net: norm(parsed.net),
+      total: norm(parsed.total),
+      __corregido: !!parsed.__corregido
     });
   }
 
-  // Eliminar duplicados por (item + material)
-  const vistos = new Set();
-  const unicos = [];
-  for (const it of items) {
-    const k = `${it.item}|${it.material}`;
-    if (vistos.has(k)) continue;
-    vistos.add(k);
-    unicos.push(it);
-  }
-  unicos.sort((a, b) => a.item.localeCompare(b.item));
-  return unicos;
+  items.sort((a, b) => a.item.localeCompare(b.item));
+  return items;
 }
 
 // ──────────────────────────────────────────────────────
@@ -587,11 +667,32 @@ async function procesarArchivo(file) {
     // ── Intento 2: OCR si lo anterior falló ──
     if (items.length === 0) {
       log('▸ Cambiando a OCR (esto puede tardar 1-3 minutos)...', 'step');
-      const texto = await ocrTodoElPDF(pdf);
-      log(`  OCR generó ${texto.length.toLocaleString()} caracteres de texto`, 'dim');
-      items = extraerItemsDeTexto(texto);
-      log(`  ${items.length} ítems extraídos del OCR`, 'dim');
+      const textosPorPagina = await ocrTodoElPDF(pdf);
+      const totalChars = textosPorPagina.reduce((s, t) => s + t.length, 0);
+      log(`  OCR generó ${totalChars.toLocaleString()} caracteres de texto`, 'dim');
       ocultarProgreso();
+
+      // Parsear página por página y reportar
+      const yaUsados = new Set();
+      let totalCorr = 0;
+      for (let p = 0; p < textosPorPagina.length; p++) {
+        const itemsPag = extraerItemsDeTexto(textosPorPagina[p]);
+        let agregados = 0, corregidos = 0;
+        for (const it of itemsPag) {
+          const k = `${it.item}|${it.material}`;
+          if (yaUsados.has(k)) continue;
+          yaUsados.add(k);
+          if (it.__corregido) corregidos++;
+          items.push(it);
+          agregados++;
+        }
+        totalCorr += corregidos;
+        log(`  Página ${p + 1}: ${agregados} ítem(s)${corregidos ? ` (${corregidos} con números corregidos)` : ''}`, 'dim');
+      }
+      items.sort((a, b) => a.item.localeCompare(b.item));
+      if (totalCorr > 0) {
+        log(`  ${totalCorr} ítem(s) tuvieron números corregidos por validación aritmética`, 'dim');
+      }
     }
 
     if (items.length === 0) {
@@ -697,6 +798,16 @@ function descargarExcel() {
     return v;
   }))];
   const ws = XLSX.utils.aoa_to_sheet(data);
+
+  // Forzar a Item y Material a tipo texto para preservar los ceros a la izquierda (ej. "0010")
+  itemsGlobal.forEach((_, i) => {
+    const r = i + 1;
+    ['A', 'B'].forEach(col => {
+      const ref = col + (r + 1);
+      if (ws[ref]) { ws[ref].t = 's'; ws[ref].v = String(ws[ref].v); }
+    });
+  });
+
   ws['!cols'] = [8, 14, 44, 10, 12, 12].map(w => ({ wch: w }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Items DeLaval');
