@@ -863,94 +863,174 @@ function renderTabla(items) {
 }
 
 // ── Descargas ─────────────────────────────────────────
+// Extrae el número de factura del nombre de archivo (ej. "Invoice 2738061161" → "2738061161")
+function extraerNroFactura(nom) {
+  if (!nom) return '';
+  const m = nom.match(/(\d{7,})/);
+  return m ? m[1] : nom;
+}
+
 function descargarExcel() {
   const ws = {};
-
-  // ── Bloque de configuración (vos llenás estos valores en Excel) ──
-  ws['A1'] = { t: 's', v: 'Extracción de factura DeLaval' };
-  ws['A3'] = { t: 's', v: 'Tipo de Cambio:' };
-  ws['B3'] = { t: 'n', v: 1 };
-  ws['A4'] = { t: 's', v: 'Total Flete:' };
-  ws['B4'] = { t: 'n', v: 0 };
-  ws['A5'] = { t: 's', v: 'Total Seguro:' };
-  ws['B5'] = { t: 'n', v: 0 };
-  ws['A6'] = { t: 's', v: 'Total Otros gtos Origen:' };
-  ws['B6'] = { t: 'n', v: 0 };
-
-  // ── Cabeceras de la tabla (fila 8) ──
-  const HEADER_ROW = 8;
-  const DATA_START = HEADER_ROW + 1; // fila 9
   const N = itemsGlobal.length;
-  const TOTAL_ROW = DATA_START + N;  // fila siguiente al último ítem
+  const DATA_START = 44;            // los items siempre arrancan en la fila 44 (igual que tu plantilla)
+  const TOTAL_ROW  = DATA_START + N;
+  const ROW_CONV   = TOTAL_ROW + 1; // equivalente a la fila 185 de tu plantilla
+  const ROW_CTRL   = TOTAL_ROW + 2; // equivalente a la fila 186
 
-  const headers = [
-    'ITEM', 'ITEM FACTURA', 'ARTÍCULO', 'CANTIDAD', 'PRECIO UNITARIO',
-    'SUBTOTAL', 'Flete', 'Otros gtos Origen', 'Seguro', 'Total INVOICE', 'TOTAL USD'
+  // Helper: detecta si un valor empieza con '=' (fórmula), si es número o texto
+  const set = (ref, val) => {
+    if (val === null || val === undefined || val === '') return;
+    if (typeof val === 'string' && val.startsWith('=')) {
+      ws[ref] = { t: 'n', f: val.substring(1) };
+    } else if (typeof val === 'number') {
+      ws[ref] = { t: 'n', v: val };
+    } else {
+      ws[ref] = { t: 's', v: String(val) };
+    }
+  };
+
+  // ── Bloque superior: Datos Embarque, Datos Despacho, Costos en Pesos, Costos en Dolares ──
+  // Estructura idéntica a Libro1.xlsx. Los valores que vos cargás manualmente quedan vacíos.
+  const estatico = [
+    ['C1',  'Tabla de costeo de importaciones'],
+    ['C3',  'SE INGRESAN DATOS SOLAMENTE EN CELDAS BLANCAS'],
+    ['C4',  'SI LA FACTURA ES EN DÓLARES, SE INGRESA "1" EN TC Euro y en USD interbancario billete(*)'],
+    // Datos Embarque
+    ['C6',  'Datos Embarque'],
+    ['C7',  'Nombre Proveedor:'], ['E7', 'DeLaval'],
+    ['C8',  'Nº factura:'],       ['E8', extraerNroFactura(nombreArchivo)],
+    ['C9',  'N° DUA:'],
+    ['C10', 'Fecha DUA'],
+    ['C11', 'TC Euro día anterior a fecha DUA:'],
+    ['D11', '=E10-1'], ['F11', '*'],
+    ['G11', 'día anterior!!'], ['H11', 'ATT.!! Factura en USD'], ['I11', 'AÉREO'],
+    ['C12', 'USD interbancario billete día anterior a fecha DUA'],
+    ['D12', '=D11'], ['F12', '*'],
+    ['C13', 'Cotización a utilizar'], ['E13', '=+E11/E12'],
+    // Datos Despacho + Costos en Pesos (encabezados de bloque)
+    ['C15', 'Datos Despacho'], ['H15', 'Costos en Pesos'],
+    ['C16', 'Nombre Despachante:'], ['H16', 'Exonerados Oficiales'],
+    ['C17', 'Nº factura $ :'],      ['H17', 'TSA'],            ['M17', 'Aduanas variable'],
+    ['C18', 'Fecha emisión fact. $:'], ['H18', 'Servicio extraordinario'], ['M18', 'Aduanas variable'],
+    ['C19', 'Importe total fact. $:'], ['H19', 'Guia de transito'],        ['M19', 'Aduanas fijo'],
+    ['C20', 'Nº factura USD:'],     ['H20', 'Timbre Auri'],     ['K20', '=SUM(J17:J20)'], ['M20', 'Aduanas fijo'],
+    ['C21', 'Fecha emisión fact. USD:'], ['H21', 'Recargos y Gastos'],
+    ['C22', 'Importe total fact USD:'], ['H22', 'Recargo'],     ['M22', 'Aranceles, varía según artículo'],
+    ['C23', 'USD interbancario billete día anterior a fecha fact despachante:'],
+    ['E23', '=F18-1'], ['G23', 'día anterior!!'], ['H23', 'IMADUNI'],
+    ['H24', 'Tasas Consulares'], ['M24', '5% extra zona, 3% Origen Mercosur, Equipos de ordeño completos exonerados'],
+    ['H25', 'IMESI'], ['K25', '=SUM(J22:J25)'],
+    ['H26', 'Gastos Gravados'],
+    ['H27', 'Gastos Varios'],
+    ['C28', 'Costos en Dolares'], ['H28', 'Honorarios'], ['K28', '=SUM(J27:J28)'],
+    ['C29', 'Exonerados otros'], ['H29', 'Impuestos y adelantos'],
+    ['C30', 'Gastos Agencia (no gravados)'], ['F30', '=E30+E31+E32'], ['H30', 'IVA'], ['M30', 'DGI'],
+    ['C31', 'Iva sobre 3% flete Venta'], ['H31', 'Adelanto de IVA'], ['M31', 'DGI'],
+    ['C32', 'Terminal '], ['H32', 'Anticipo IRAE'], ['M32', 'DGI'],
+    ['C33', 'Gravados'], ['H33', 'Total imps. Y adelantos'], ['J33', '=SUM(J30:J32)'],
+    ['C34', 'Gastos Agencia (gravados)'], ['H34', 'Exonerados otros'],
+    ['C35', 'Honorarios'], ['H35', 'VUCE'], ['M35', 'Aduanas'],
+    ['C36', 'Handling'], ['H36', 'Proventos Portuarios'], ['K36', '=SUM(J35:J36)'],
+    ['C37', 'Flete Interno'], ['F37', '=SUM(E34:E37)'], ['I37', '=K38+J33+(K28*0.22)'],
+    ['D38', '=(F37*1.22)+F30+F38'], ['E38', 'Redondeo'], ['F38', 0.03],
+    ['H38', 'Total factura:'], ['I38', '=ROUND(I37,0)'], ['J38', '=IF(I38=F19,"","ERROR")'], ['K38', '=SUM(K20:K37)'],
+    ['C39', 'Total factura:'], ['D39', '=ROUND(D38,2)'], ['E39', '=IF(D39=F22,"","ERROR")'], ['F39', '=SUM(F30:F38)'],
+    ['P42', 'IMPUESTOS/TASAS SEGÚN %'],
+    ['U42', 'GASTOS PRORRATEADOS POR VALOR EN FACTURA'],
+    // Headers tabla (fila 43)
+    ['A43', 'ITEM'], ['B43', 'ITEM FACTURA'], ['C43', 'ARTÍCULO'], ['D43', 'CANTIDAD'], ['E43', 'PRECIO UNITARIO'],
+    ['F43', 'SUBTOTAL'], ['G43', 'Flete'], ['H43', 'Otros gtos Origen'], ['I43', 'Seguro'], ['J43', 'Total INVOICE'], ['K43', 'TOTAL USD'],
+    ['L43', 26], ['M43', 2], ['N43', 4], ['O43', 3],
+    ['P43', 'T.CONSUL'], ['Q43', 'RECARGO MIN'], ['R43', 'IMADUNI'], ['S43', 'RECARGO ADIC'], ['T43', 'TOTAL IMP'],
+    ['U43', 'COSTO DESPACHANTE'], ['V43', 'GASTOS PORTUARIOS'], ['W43', 'FLETE INTERNO'], ['X43', 'OTROS GTOS ADUANA'],
+    ['Y43', 'TOTAL OTROS GASTOS'], ['Z43', 'COSTEO FINAL'], ['AA43', 'PRECIO UNITARIO2'], ['AB43', '%']
   ];
-  for (let c = 0; c < headers.length; c++) {
-    const ref = XLSX.utils.encode_cell({ r: HEADER_ROW - 1, c });
-    ws[ref] = { t: 's', v: headers[c] };
-  }
+  for (const [ref, val] of estatico) set(ref, val);
 
-  // ── Filas de datos con fórmulas ──
+  // ── Filas de items (44 a TOTAL_ROW-1) con todas las fórmulas ──
+  const T = TOTAL_ROW;
   for (let i = 0; i < N; i++) {
     const r = DATA_START + i;
     const it = itemsGlobal[i];
     const qty = parseFloat(it.quantity) || 0;
     const net = parseFloat(it.net) || 0;
 
-    // A: ITEM (libre, vos numerás como quieras)
-    ws[`A${r}`] = { t: 's', v: '' };
-    // B: ITEM FACTURA — texto para preservar ceros a la izquierda
-    ws[`B${r}`] = { t: 's', v: String(it.item) };
-    // C: ARTÍCULO — también texto
-    ws[`C${r}`] = { t: 's', v: String(it.material) };
-    // D: CANTIDAD
-    ws[`D${r}`] = { t: 'n', v: qty };
-    // E: PRECIO UNITARIO
-    ws[`E${r}`] = { t: 'n', v: net };
-    // F: SUBTOTAL = Precio × Cantidad
-    ws[`F${r}`] = { t: 'n', f: `E${r}*D${r}` };
-    // G: Flete = (Total Flete / Total Subtotal) × Subtotal de la fila
-    ws[`G${r}`] = { t: 'n', f: `$B$4/$F$${TOTAL_ROW}*F${r}` };
-    // H: Otros gtos Origen — mismo prorrateo
-    ws[`H${r}`] = { t: 'n', f: `$B$6/$F$${TOTAL_ROW}*F${r}` };
-    // I: Seguro — mismo prorrateo
-    ws[`I${r}`] = { t: 'n', f: `$B$5/$F$${TOTAL_ROW}*F${r}` };
-    // J: Total INVOICE = G+F+I+H (igual que tu plantilla)
-    ws[`J${r}`] = { t: 'n', f: `G${r}+F${r}+I${r}+H${r}` };
-    // K: TOTAL USD = Total INVOICE × Tipo de Cambio
-    ws[`K${r}`] = { t: 'n', f: `J${r}*$B$3` };
+    // Datos extraídos del PDF
+    ws[`B${r}`] = { t: 's', v: String(it.item) };       // ITEM FACTURA (texto, conserva ceros)
+    ws[`C${r}`] = { t: 's', v: String(it.material) };   // ARTÍCULO (texto)
+    ws[`D${r}`] = { t: 'n', v: qty };                    // CANTIDAD
+    ws[`E${r}`] = { t: 'n', v: net };                    // PRECIO UNITARIO
+
+    // Fórmulas (idénticas a tu plantilla, con la fila de totales ajustada al N real)
+    set(`F${r}`,  `=+E${r}*D${r}`);
+    set(`G${r}`,  `=+$G$${T}/$F$${T}*F${r}`);
+    set(`H${r}`,  `=+$H$${T}/$F$${T}*F${r}`);
+    set(`I${r}`,  `=+$I$${T}/$F$${T}*F${r}`);
+    set(`J${r}`,  `=+G${r}+F${r}+I${r}+H${r}`);
+    set(`K${r}`,  `=+J${r}*E$13`);
+    set(`P${r}`,  `=+K${r}*L${r}/100`);
+    set(`Q${r}`,  `=+K${r}*M${r}/100`);
+    set(`R${r}`,  `=+K${r}*N${r}/100`);
+    set(`S${r}`,  `=+K${r}*O${r}/100`);
+    set(`T${r}`,  `=SUM(P${r}:S${r})`);
+    set(`U${r}`,  `=+$U$${T}/$K$${T}*K${r}`);
+    set(`V${r}`,  `=+$V$${T}/$K$${T}*K${r}`);
+    set(`W${r}`,  `=+$W$${T}/$K$${T}*K${r}`);
+    set(`X${r}`,  `=+$X$${T}/$K$${T}*K${r}`);
+    set(`Y${r}`,  `=SUM(U${r}:X${r})`);
+    set(`Z${r}`,  `=+K${r}+T${r}+Y${r}`);
+    set(`AA${r}`, `=+Z${r}/D${r}`);
+    set(`AB${r}`, `=AA${r}/(E${r}*$E$13)-1`);
   }
 
-  // ── Fila de totales (al final de la tabla) ──
-  ws[`A${TOTAL_ROW}`] = { t: 's', v: 'TOTALES' };
-  ws[`F${TOTAL_ROW}`] = { t: 'n', f: `SUM(F${DATA_START}:F${TOTAL_ROW - 1})` };
-  ws[`G${TOTAL_ROW}`] = { t: 'n', f: `SUM(G${DATA_START}:G${TOTAL_ROW - 1})` };
-  ws[`H${TOTAL_ROW}`] = { t: 'n', f: `SUM(H${DATA_START}:H${TOTAL_ROW - 1})` };
-  ws[`I${TOTAL_ROW}`] = { t: 'n', f: `SUM(I${DATA_START}:I${TOTAL_ROW - 1})` };
-  ws[`J${TOTAL_ROW}`] = { t: 'n', f: `SUM(J${DATA_START}:J${TOTAL_ROW - 1})` };
-  ws[`K${TOTAL_ROW}`] = { t: 'n', f: `SUM(K${DATA_START}:K${TOTAL_ROW - 1})` };
+  // ── Fila de totales (equivalente a la 184 de tu plantilla) ──
+  set(`F${T}`, `=SUM(F${DATA_START}:F${T - 1})`);
+  // G, H, I los cargás vos manualmente (Total Flete / Otros / Seguro)
+  set(`J${T}`, `=SUM(J${DATA_START}:J${T - 1})`);
+  set(`K${T}`, `=SUM(K${DATA_START}:K${T - 1})`);
+  set(`P${T}`, `=SUM(P${DATA_START}:P${T - 1})`);
+  set(`Q${T}`, `=SUM(Q${DATA_START}:Q${T - 1})`);
+  set(`R${T}`, `=SUM(R${DATA_START}:R${T - 1})`);
+  set(`S${T}`, `=SUM(S${DATA_START}:S${T - 1})`);
+  set(`T${T}`, `=SUM(T${DATA_START}:T${T - 1})`);
+  set(`U${T}`, '=+E35+J28/F23');
+  set(`V${T}`, '=+(J35+J36)/E12+E30+E31+E32');
+  set(`W${T}`, '=E37');
+  set(`X${T}`, '=J27/F23+K20/E12+E36');
+  set(`Y${T}`, `=SUM(Y${DATA_START}:Y${T - 1})`);
+  set(`Z${T}`, `=SUM(Z${DATA_START}:Z${T - 1})`);
 
-  // Rango y anchos de columna
-  ws['!ref'] = `A1:K${TOTAL_ROW}`;
+  // ── Fila de conversiones (equivalente a la 185) ──
+  set(`F${ROW_CONV}`, `=+F${T}*$E$13`);
+  set(`G${ROW_CONV}`, `=G${T}/F${T}`);
+  set(`H${ROW_CONV}`, `=+H${T}*$E$13`);
+  set(`I${ROW_CONV}`, `=+I${T}*$E$13`);
+  set(`J${ROW_CONV}`, `=J${T}/F${T}-1`);
+  set(`N${ROW_CONV}`, 'Control');
+  set(`P${ROW_CONV}`, '=+J24/E12');
+  set(`Q${ROW_CONV}`, '=+J22/E12');
+  set(`R${ROW_CONV}`, '=+J23/E12');
+  set(`Z${ROW_CONV}`, `=Z${T}/F${ROW_CONV}-1`);
+
+  // ── Fila de control final (equivalente a la 186) ──
+  set(`G${ROW_CTRL}`, `=SUM(G${DATA_START}:G${T})`);
+  set(`Z${ROW_CTRL}`, `=Z${T}/K${T}-1`);
+
+  // Rango y anchos de columna (28 columnas, A hasta AB)
+  ws['!ref'] = `A1:AB${ROW_CTRL}`;
   ws['!cols'] = [
-    { wch: 8 },   // A: ITEM
-    { wch: 14 },  // B: ITEM FACTURA
-    { wch: 14 },  // C: ARTÍCULO
-    { wch: 10 },  // D: CANTIDAD
-    { wch: 14 },  // E: PRECIO UNITARIO
-    { wch: 12 },  // F: SUBTOTAL
-    { wch: 12 },  // G: Flete
-    { wch: 16 },  // H: Otros gtos Origen
-    { wch: 12 },  // I: Seguro
-    { wch: 14 },  // J: Total INVOICE
-    { wch: 14 }   // K: TOTAL USD
+    {wch: 6},  {wch: 12}, {wch: 14}, {wch: 10}, {wch: 14},  // A-E
+    {wch: 12}, {wch: 12}, {wch: 14}, {wch: 12}, {wch: 14}, {wch: 14},  // F-K
+    {wch: 6},  {wch: 6},  {wch: 6},  {wch: 6},   // L-O (porcentajes)
+    {wch: 12}, {wch: 12}, {wch: 12}, {wch: 12}, {wch: 12},  // P-T
+    {wch: 16}, {wch: 16}, {wch: 14}, {wch: 16}, {wch: 16},  // U-Y
+    {wch: 14}, {wch: 16}, {wch: 8}                          // Z, AA, AB
   ];
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Items DeLaval');
-  XLSX.writeFile(wb, `${nombreArchivo}_items.xlsx`);
+  XLSX.utils.book_append_sheet(wb, ws, 'Hoja1');
+  XLSX.writeFile(wb, `${nombreArchivo}_costeo.xlsx`);
 }
 
 function descargarOCRraw() {
