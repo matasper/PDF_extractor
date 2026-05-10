@@ -1042,54 +1042,48 @@ async function descargarExcel() {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-// Versión vieja conservada como fallback (no se usa)
-function _descargarExcelSinEstilos() {
-  const ws = {};
-  const N = itemsGlobal.length;
-  const DATA_START = 44;            // los items siempre arrancan en la fila 44 (igual que tu plantilla)
-  const TOTAL_ROW  = DATA_START + N;
-  const ROW_CONV   = TOTAL_ROW + 1; // equivalente a la fila 185 de tu plantilla
-  const ROW_CTRL   = TOTAL_ROW + 2; // equivalente a la fila 186
+function descargarOCRraw() {
+  if (!ocrTextosPorPagina.length) return;
+  const texto = ocrTextosPorPagina
+    .map((t, i) => `===== PÁGINA ${i + 1} =====\n${t}`)
+    .join('\n\n');
+  const blob = new Blob([texto], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${nombreArchivo}_ocr_raw.txt`;
+  a.click();
+}
 
-  // Helper: detecta si un valor empieza con '=' (fórmula), si es número o texto
-  const set = (ref, val) => {
-    if (val === null || val === undefined || val === '') return;
-    if (typeof val === 'string' && val.startsWith('=')) {
-      ws[ref] = { t: 'n', f: val.substring(1) };
-    } else if (typeof val === 'number') {
-      ws[ref] = { t: 'n', v: val };
-    } else {
-      ws[ref] = { t: 's', v: String(val) };
-    }
-  };
+function descargarCSV() {
+  const HEADS = ['Item Factura', 'Artículo', 'Cantidad', 'Precio Unitario', 'Subtotal'];
+  const rows = [HEADS, ...itemsGlobal.map(it => [
+    it.item, it.material, it.quantity, it.net, it.total
+  ])];
+  const csv = rows.map(r => r.map(v => {
+    const s = String(v ?? '');
+    return /[;"\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+  }).join(';')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${nombreArchivo}_items.csv`;
+  a.click();
+}
 
-  // ── Bloque superior: Datos Embarque, Datos Despacho, Costos en Pesos, Costos en Dolares ──
-  // Estructura idéntica a Libro1.xlsx. Los valores que vos cargás manualmente quedan vacíos.
-  const estatico = [
-    ['C1',  'Tabla de costeo de importaciones'],
-    ['C3',  'SE INGRESAN DATOS SOLAMENTE EN CELDAS BLANCAS'],
-    ['C4',  'SI LA FACTURA ES EN DÓLARES, SE INGRESA "1" EN TC Euro y en USD interbancario billete(*)'],
-    // Datos Embarque
-    ['C6',  'Datos Embarque'],
-    ['C7',  'Nombre Proveedor:'], ['E7', 'DeLaval'],
-    ['C8',  'Nº factura:'],       ['E8', extraerNroFactura(nombreArchivo)],
-    ['C9',  'N° DUA:'],
-    ['C10', 'Fecha DUA'],
-    ['C11', 'TC Euro día anterior a fecha DUA:'],
-    ['D11', '=E10-1'], ['F11', '*'],
-    ['G11', 'día anterior!!'], ['H11', 'ATT.!! Factura en USD'], ['I11', 'AÉREO'],
-    ['C12', 'USD interbancario billete día anterior a fecha DUA'],
-    ['D12', '=D11'], ['F12', '*'],
-    ['C13', 'Cotización a utilizar'], ['E13', '=+E11/E12'],
-    // Datos Despacho + Costos en Pesos (encabezados de bloque)
-    ['C15', 'Datos Despacho'], ['H15', 'Costos en Pesos'],
-    ['C16', 'Nombre Despachante:'], ['H16', 'Exonerados Oficiales'],
-    ['C17', 'Nº factura $ :'],      ['H17', 'TSA'],            ['M17', 'Aduanas variable'],
-    ['C18', 'Fecha emisión fact. $:'], ['H18', 'Servicio extraordinario'], ['M18', 'Aduanas variable'],
-    ['C19', 'Importe total fact. $:'], ['H19', 'Guia de transito'],        ['M19', 'Aduanas fijo'],
-    ['C20', 'Nº factura USD:'],     ['H20', 'Timbre Auri'],     ['K20', '=SUM(J17:J20)'], ['M20', 'Aduanas fijo'],
-    ['C21', 'Fecha emisión fact. USD:'], ['H21', 'Recargos y Gastos'],
-    ['C22', 'Importe total fact USD:'], ['H22', 'Recargo'],     ['M22', 'Aranceles, varía según artículo'],
-    ['C23', 'USD interbancario billete día anterior a fecha fact despachante:'],
-    ['E23', '=F18-1'], ['G23', 'día anterior!!'], ['H23', 'IMADUNI'],
-    ['H2
+// ── Drag & Drop ──────────────────────────────────────
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) procesarArchivo(file);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) procesarArchivo(fileInput.files[0]); });
+dropZone.addEventListener('click', e => { if (e.target.tagName !== 'BUTTON') fileInput.click(); });
+</script>
+</body>
+</html>
