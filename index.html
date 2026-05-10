@@ -885,14 +885,37 @@ function decodificarTemplate() {
 // Usa Libro1.xlsx como plantilla base (preserva colores, bordes, fuentes, celdas combinadas).
 // Sobreescribe las filas de items y ajusta los totales según la cantidad real.
 async function descargarExcel() {
+  try {
+    await descargarExcelImpl();
+  } catch (err) {
+    console.error('[descargarExcel] Error:', err);
+    log('❌ Error al generar el Excel: ' + (err && err.message ? err.message : err), 'err');
+    alert('Error al generar el Excel:\n\n' + (err && err.message ? err.message : err));
+  }
+}
+
+async function descargarExcelImpl() {
   if (typeof ExcelJS === 'undefined') {
-    log('❌ ExcelJS no se cargó. Recargá la página.', 'err');
+    log('❌ ExcelJS no se cargó. Recargá la página (Ctrl+Shift+R).', 'err');
+    alert('ExcelJS no se cargó. Recargá la página con Ctrl+Shift+R.');
+    return;
+  }
+  if (!itemsGlobal || itemsGlobal.length === 0) {
+    log('⚠ No hay ítems para exportar.', 'warn');
+    alert('No hay ítems para exportar. Procesá un PDF primero.');
+    return;
+  }
+  if (typeof LIBRO1_TEMPLATE_B64 === 'undefined' || !LIBRO1_TEMPLATE_B64) {
+    log('❌ Template Libro1 no embebido en la página.', 'err');
+    alert('Template Libro1 no encontrado. Recargá la página.');
     return;
   }
 
+  log(`▸ Generando Excel con ${itemsGlobal.length} ítems...`, 'step');
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(decodificarTemplate());
   const ws = wb.getWorksheet('Hoja1') || wb.worksheets[0];
+  if (!ws) throw new Error('La hoja "Hoja1" no existe en el template');
 
   const N = itemsGlobal.length;
   const DATA_START = 44;
