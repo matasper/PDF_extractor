@@ -1071,19 +1071,30 @@ function descargarCSV() {
 }
 
 // ── Drag & Drop ──────────────────────────────────────
-const dropZone = document.getElementById('drop-zone');
-const fileInput = document.getElementById('file-input');
+// Registramos los listeners dentro de un try/catch para que cualquier error puntual
+// no impida que el botón de selección funcione.
+try {
+  const dropZone  = document.getElementById('drop-zone');
+  const fileInput = document.getElementById('file-input');
 
-dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-dropZone.addEventListener('drop', e => {
-  e.preventDefault();
-  dropZone.classList.remove('drag-over');
-  const file = e.dataTransfer.files[0];
-  if (file) procesarArchivo(file);
-});
-fileInput.addEventListener('change', () => { if (fileInput.files[0]) procesarArchivo(fileInput.files[0]); });
-dropZone.addEventListener('click', e => { if (e.target.tagName !== 'BUTTON') fileInput.click(); });
+  if (!dropZone || !fileInput) {
+    console.error('[extractor] No se encontró #drop-zone o #file-input en el DOM');
+  } else {
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file) procesarArchivo(file);
+    });
+    fileInput.addEventListener('change', () => { if (fileInput.files[0]) procesarArchivo(fileInput.files[0]); });
+    dropZone.addEventListener('click', e => { if (e.target.tagName !== 'BUTTON') fileInput.click(); });
+    console.log('[extractor] Listeners de drag&drop registrados OK');
+  }
+} catch (err) {
+  console.error('[extractor] Error al registrar listeners:', err);
+}
 </script>
 </body>
 </html>
