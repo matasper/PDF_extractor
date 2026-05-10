@@ -1053,3 +1053,46 @@ function descargarOCRraw() {
   a.download = `${nombreArchivo}_ocr_raw.txt`;
   a.click();
 }
+
+function descargarCSV() {
+  const HEADS = ['Item Factura', 'Artículo', 'Cantidad', 'Precio Unitario', 'Subtotal'];
+  const rows = [HEADS, ...itemsGlobal.map(it => [
+    it.item, it.material, it.quantity, it.net, it.total
+  ])];
+  const csv = rows.map(r => r.map(v => {
+    const s = String(v ?? '');
+    return /[;"\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+  }).join(';')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${nombreArchivo}_items.csv`;
+  a.click();
+}
+
+// ── Drag & Drop ──────────────────────────────────────
+try {
+  const dropZone  = document.getElementById('drop-zone');
+  const fileInput = document.getElementById('file-input');
+
+  if (!dropZone || !fileInput) {
+    console.error('[extractor] No se encontró #drop-zone o #file-input en el DOM');
+  } else {
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file) procesarArchivo(file);
+    });
+    fileInput.addEventListener('change', () => { if (fileInput.files[0]) procesarArchivo(fileInput.files[0]); });
+    dropZone.addEventListener('click', e => { if (e.target.tagName !== 'BUTTON') fileInput.click(); });
+    console.log('[extractor] Listeners de drag&drop registrados OK');
+  }
+} catch (err) {
+  console.error('[extractor] Error al registrar listeners:', err);
+}
+</script>
+</body>
+</html>
