@@ -917,6 +917,16 @@ async function descargarExcelImpl() {
   const ws = wb.getWorksheet('Hoja1') || wb.worksheets[0];
   if (!ws) throw new Error('La hoja "Hoja1" no existe en el template');
 
+  // Workaround: openpyxl-re-guardó el template y eso le sacó algunas propiedades que ExcelJS espera.
+  // Inicializamos las propiedades opcionales para que .writeBuffer() no reviente.
+  wb.worksheets.forEach(w => {
+    if (!w.comments)     w.comments     = [];
+    if (!w.hyperlinks)   w.hyperlinks   = [];
+    if (!w.tables)       w.tables       = {};
+    if (!w.dataValidations) w.dataValidations = { model: {} };
+    if (!w.conditionalFormattings) w.conditionalFormattings = [];
+  });
+
   const N = itemsGlobal.length;
   const DATA_START = 44;
   const T = DATA_START + N;          // fila de totales (donde vos cargás G/H/I)
