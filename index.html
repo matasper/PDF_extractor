@@ -310,12 +310,11 @@
       <table>
         <thead>
           <tr>
-            <th>Item</th>
-            <th>Material</th>
-            <th>Descripción</th>
+            <th>Item Factura</th>
+            <th>Artículo</th>
             <th>Cantidad</th>
-            <th style="text-align:right">Net</th>
-            <th style="text-align:right">Total</th>
+            <th style="text-align:right">Precio Unitario</th>
+            <th style="text-align:right">Subtotal</th>
           </tr>
         </thead>
         <tbody id="tabla-body"></tbody>
@@ -855,7 +854,6 @@ function renderTabla(items) {
     tr.innerHTML = `
       <td class="td-item">${it.item}</td>
       <td class="td-mat">${it.material}</td>
-      <td class="td-desc" title="${(it.description||'').replace(/"/g,'&quot;')}">${it.description||''}</td>
       <td class="td-num">${it.quantity}</td>
       <td class="td-net">${it.net}</td>
       <td class="td-total">${it.total}</td>
@@ -866,28 +864,90 @@ function renderTabla(items) {
 
 // ── Descargas ─────────────────────────────────────────
 function descargarExcel() {
-  const COLS = ['item','material','description','quantity','net','total'];
-  const HEADS = ['Item','Material','Descripción','Cantidad','Net','Total'];
-  const data = [HEADS, ...itemsGlobal.map(it => COLS.map(c => {
-    const v = it[c];
-    if (['quantity','net','total'].includes(c) && v !== '') {
-      const n = parseFloat(v);
-      return isNaN(n) ? v : n;
-    }
-    return v;
-  }))];
-  const ws = XLSX.utils.aoa_to_sheet(data);
+  const ws = {};
 
-  // Forzar a Item y Material a tipo texto para preservar los ceros a la izquierda (ej. "0010")
-  itemsGlobal.forEach((_, i) => {
-    const r = i + 1;
-    ['A', 'B'].forEach(col => {
-      const ref = col + (r + 1);
-      if (ws[ref]) { ws[ref].t = 's'; ws[ref].v = String(ws[ref].v); }
-    });
-  });
+  // ── Bloque de configuración (vos llenás estos valores en Excel) ──
+  ws['A1'] = { t: 's', v: 'Extracción de factura DeLaval' };
+  ws['A3'] = { t: 's', v: 'Tipo de Cambio:' };
+  ws['B3'] = { t: 'n', v: 1 };
+  ws['A4'] = { t: 's', v: 'Total Flete:' };
+  ws['B4'] = { t: 'n', v: 0 };
+  ws['A5'] = { t: 's', v: 'Total Seguro:' };
+  ws['B5'] = { t: 'n', v: 0 };
+  ws['A6'] = { t: 's', v: 'Total Otros gtos Origen:' };
+  ws['B6'] = { t: 'n', v: 0 };
 
-  ws['!cols'] = [8, 14, 44, 10, 12, 12].map(w => ({ wch: w }));
+  // ── Cabeceras de la tabla (fila 8) ──
+  const HEADER_ROW = 8;
+  const DATA_START = HEADER_ROW + 1; // fila 9
+  const N = itemsGlobal.length;
+  const TOTAL_ROW = DATA_START + N;  // fila siguiente al último ítem
+
+  const headers = [
+    'ITEM', 'ITEM FACTURA', 'ARTÍCULO', 'CANTIDAD', 'PRECIO UNITARIO',
+    'SUBTOTAL', 'Flete', 'Otros gtos Origen', 'Seguro', 'Total INVOICE', 'TOTAL USD'
+  ];
+  for (let c = 0; c < headers.length; c++) {
+    const ref = XLSX.utils.encode_cell({ r: HEADER_ROW - 1, c });
+    ws[ref] = { t: 's', v: headers[c] };
+  }
+
+  // ── Filas de datos con fórmulas ──
+  for (let i = 0; i < N; i++) {
+    const r = DATA_START + i;
+    const it = itemsGlobal[i];
+    const qty = parseFloat(it.quantity) || 0;
+    const net = parseFloat(it.net) || 0;
+
+    // A: ITEM (libre, vos numerás como quieras)
+    ws[`A${r}`] = { t: 's', v: '' };
+    // B: ITEM FACTURA — texto para preservar ceros a la izquierda
+    ws[`B${r}`] = { t: 's', v: String(it.item) };
+    // C: ARTÍCULO — también texto
+    ws[`C${r}`] = { t: 's', v: String(it.material) };
+    // D: CANTIDAD
+    ws[`D${r}`] = { t: 'n', v: qty };
+    // E: PRECIO UNITARIO
+    ws[`E${r}`] = { t: 'n', v: net };
+    // F: SUBTOTAL = Precio × Cantidad
+    ws[`F${r}`] = { t: 'n', f: `E${r}*D${r}` };
+    // G: Flete = (Total Flete / Total Subtotal) × Subtotal de la fila
+    ws[`G${r}`] = { t: 'n', f: `$B$4/$F$${TOTAL_ROW}*F${r}` };
+    // H: Otros gtos Origen — mismo prorrateo
+    ws[`H${r}`] = { t: 'n', f: `$B$6/$F$${TOTAL_ROW}*F${r}` };
+    // I: Seguro — mismo prorrateo
+    ws[`I${r}`] = { t: 'n', f: `$B$5/$F$${TOTAL_ROW}*F${r}` };
+    // J: Total INVOICE = G+F+I+H (igual que tu plantilla)
+    ws[`J${r}`] = { t: 'n', f: `G${r}+F${r}+I${r}+H${r}` };
+    // K: TOTAL USD = Total INVOICE × Tipo de Cambio
+    ws[`K${r}`] = { t: 'n', f: `J${r}*$B$3` };
+  }
+
+  // ── Fila de totales (al final de la tabla) ──
+  ws[`A${TOTAL_ROW}`] = { t: 's', v: 'TOTALES' };
+  ws[`F${TOTAL_ROW}`] = { t: 'n', f: `SUM(F${DATA_START}:F${TOTAL_ROW - 1})` };
+  ws[`G${TOTAL_ROW}`] = { t: 'n', f: `SUM(G${DATA_START}:G${TOTAL_ROW - 1})` };
+  ws[`H${TOTAL_ROW}`] = { t: 'n', f: `SUM(H${DATA_START}:H${TOTAL_ROW - 1})` };
+  ws[`I${TOTAL_ROW}`] = { t: 'n', f: `SUM(I${DATA_START}:I${TOTAL_ROW - 1})` };
+  ws[`J${TOTAL_ROW}`] = { t: 'n', f: `SUM(J${DATA_START}:J${TOTAL_ROW - 1})` };
+  ws[`K${TOTAL_ROW}`] = { t: 'n', f: `SUM(K${DATA_START}:K${TOTAL_ROW - 1})` };
+
+  // Rango y anchos de columna
+  ws['!ref'] = `A1:K${TOTAL_ROW}`;
+  ws['!cols'] = [
+    { wch: 8 },   // A: ITEM
+    { wch: 14 },  // B: ITEM FACTURA
+    { wch: 14 },  // C: ARTÍCULO
+    { wch: 10 },  // D: CANTIDAD
+    { wch: 14 },  // E: PRECIO UNITARIO
+    { wch: 12 },  // F: SUBTOTAL
+    { wch: 12 },  // G: Flete
+    { wch: 16 },  // H: Otros gtos Origen
+    { wch: 12 },  // I: Seguro
+    { wch: 14 },  // J: Total INVOICE
+    { wch: 14 }   // K: TOTAL USD
+  ];
+
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Items DeLaval');
   XLSX.writeFile(wb, `${nombreArchivo}_items.xlsx`);
@@ -906,9 +966,10 @@ function descargarOCRraw() {
 }
 
 function descargarCSV() {
-  const COLS = ['item','material','description','quantity','net','total'];
-  const HEADS = ['Item','Material','Descripción','Cantidad','Net','Total'];
-  const rows = [HEADS, ...itemsGlobal.map(it => COLS.map(c => it[c]))];
+  const HEADS = ['Item Factura', 'Artículo', 'Cantidad', 'Precio Unitario', 'Subtotal'];
+  const rows = [HEADS, ...itemsGlobal.map(it => [
+    it.item, it.material, it.quantity, it.net, it.total
+  ])];
   const csv = rows.map(r => r.map(v => {
     const s = String(v ?? '');
     return /[;"\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
