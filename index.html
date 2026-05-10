@@ -901,32 +901,56 @@ async function descargarExcel() {
   const ROW_CTRL = T + 2;
   const NUM_COLS = 28;               // de A hasta AB
 
-  // 0) Snapshot de estilos del template ANTES de modificar nada:
-  //    - fila 44: estilo de "fila de item" (fondo azul claro, fuente normal)
-  //    - fila 184: estilo de "fila de totales" (con negritas)
-  //    Snapshoteamos por columna porque cada una puede tener su formato (números, bordes, etc.)
+  // 0) Snapshot de estilos del template ANTES de modificar nada.
+  //    ExcelJS no acepta `cell.style = {...}` como reemplazo total (lo merge-a),
+  //    así que leemos y escribimos cada propiedad individualmente (font, fill, border, alignment, numFmt).
   const TEMPLATE_ITEM_ROW   = 44;
   const TEMPLATE_TOTALS_ROW = 184;
-  const itemStyles = {}, totalsStyles = {};
-  const clone = (o) => o ? JSON.parse(JSON.stringify(o)) : {};
-  for (let c = 1; c <= NUM_COLS; c++) {
-    itemStyles[c]   = clone(ws.getRow(TEMPLATE_ITEM_ROW).getCell(c).style);
-    totalsStyles[c] = clone(ws.getRow(TEMPLATE_TOTALS_ROW).getCell(c).style);
+  const clone = (o) => o ? JSON.parse(JSON.stringify(o)) : null;
+
+  function snapshotEstilo(rowNum) {
+    const out = {};
+    const row = ws.getRow(rowNum);
+    for (let c = 1; c <= NUM_COLS; c++) {
+      const cell = row.getCell(c);
+      out[c] = {
+        font:      clone(cell.font),
+        fill:      clone(cell.fill),
+        border:    clone(cell.border),
+        alignment: clone(cell.alignment),
+        numFmt:    cell.numFmt || null,
+      };
+    }
+    return out;
   }
+  function aplicarEstilo(rowNum, snap) {
+    const row = ws.getRow(rowNum);
+    for (let c = 1; c <= NUM_COLS; c++) {
+      const cell = row.getCell(c);
+      const s = snap[c];
+      // Asignamos siempre las 5 propiedades (con defaults si no hay)
+      cell.font      = s.font      ? clone(s.font)      : { name: 'Calibri', size: 11 };
+      cell.fill      = s.fill      ? clone(s.fill)      : { type: 'pattern', pattern: 'none' };
+      cell.border    = s.border    ? clone(s.border)    : {};
+      cell.alignment = s.alignment ? clone(s.alignment) : {};
+      cell.numFmt    = s.numFmt    || 'General';
+    }
+  }
+
+  const itemStyles   = snapshotEstilo(TEMPLATE_ITEM_ROW);
+  const totalsStyles = snapshotEstilo(TEMPLATE_TOTALS_ROW);
 
   // 1) Pre-cargar los datos que conocemos del PDF
   ws.getCell('E7').value = 'DeLaval';
   ws.getCell('E8').value = extraerNroFactura(nombreArchivo);
 
-  // 2) Limpiar valores Y estilos de las filas 44 hasta el final del template.
-  //    Las fórmulas viejas referencian $G$184 fijo, así que reescribimos todo.
+  // 2) Limpiar valores de las filas 44 hasta el final del template.
+  //    No tocamos los estilos acá; los reseteamos después celda por celda al aplicar el estilo correcto.
   const TEMPLATE_LAST = Math.max(ws.actualRowCount, 186);
   for (let r = DATA_START; r <= TEMPLATE_LAST; r++) {
     const row = ws.getRow(r);
     for (let c = 1; c <= NUM_COLS; c++) {
-      const cell = row.getCell(c);
-      cell.value = null;
-      cell.style = {};
+      row.getCell(c).value = null;
     }
   }
 
@@ -962,10 +986,8 @@ async function descargarExcel() {
     row.getCell('AA').value = { formula: `+Z${r}/D${r}` };
     row.getCell('AB').value = { formula: `AA${r}/(E${r}*$E$13)-1` };
 
-    // Aplicar el estilo de "fila de item" (fondo azul claro) — preserva el look del template
-    for (let c = 1; c <= NUM_COLS; c++) {
-      row.getCell(c).style = clone(itemStyles[c]);
-    }
+    // Aplicar el estilo de "fila de item" (sobreescribe el de totales que pueda tener la fila 184 original)
+    aplicarEstilo(r, itemStyles);
   }
 
   // 4) Fila de totales (equivalente a la 184 del template original)
@@ -986,9 +1008,7 @@ async function descargarExcel() {
   totRow.getCell('Z').value = { formula: `SUM(Z${DATA_START}:Z${T - 1})` };
 
   // Aplicar el estilo de "fila de totales" (negritas, etc.) a la fila T
-  for (let c = 1; c <= NUM_COLS; c++) {
-    totRow.getCell(c).style = clone(totalsStyles[c]);
-  }
+  aplicarEstilo(T, totalsStyles);
 
   // 5) Fila de conversiones (equivalente a la 185)
   const convRow = ws.getRow(ROW_CONV);
