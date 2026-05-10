@@ -899,17 +899,35 @@ async function descargarExcel() {
   const T = DATA_START + N;          // fila de totales (donde vos cargás G/H/I)
   const ROW_CONV = T + 1;
   const ROW_CTRL = T + 2;
+  const NUM_COLS = 28;               // de A hasta AB
+
+  // 0) Snapshot de estilos del template ANTES de modificar nada:
+  //    - fila 44: estilo de "fila de item" (fondo azul claro, fuente normal)
+  //    - fila 184: estilo de "fila de totales" (con negritas)
+  //    Snapshoteamos por columna porque cada una puede tener su formato (números, bordes, etc.)
+  const TEMPLATE_ITEM_ROW   = 44;
+  const TEMPLATE_TOTALS_ROW = 184;
+  const itemStyles = {}, totalsStyles = {};
+  const clone = (o) => o ? JSON.parse(JSON.stringify(o)) : {};
+  for (let c = 1; c <= NUM_COLS; c++) {
+    itemStyles[c]   = clone(ws.getRow(TEMPLATE_ITEM_ROW).getCell(c).style);
+    totalsStyles[c] = clone(ws.getRow(TEMPLATE_TOTALS_ROW).getCell(c).style);
+  }
 
   // 1) Pre-cargar los datos que conocemos del PDF
   ws.getCell('E7').value = 'DeLaval';
   ws.getCell('E8').value = extraerNroFactura(nombreArchivo);
 
-  // 2) Limpiar TODAS las filas viejas (44 hasta el final del template),
-  //    porque las fórmulas viejas referencian $G$184 fijo y eso no aplica al nuevo N
+  // 2) Limpiar valores Y estilos de las filas 44 hasta el final del template.
+  //    Las fórmulas viejas referencian $G$184 fijo, así que reescribimos todo.
   const TEMPLATE_LAST = Math.max(ws.actualRowCount, 186);
   for (let r = DATA_START; r <= TEMPLATE_LAST; r++) {
     const row = ws.getRow(r);
-    row.eachCell({ includeEmpty: true }, (cell) => { cell.value = null; });
+    for (let c = 1; c <= NUM_COLS; c++) {
+      const cell = row.getCell(c);
+      cell.value = null;
+      cell.style = {};
+    }
   }
 
   // 3) Filas de items con fórmulas (la fila de totales se inserta dinámicamente en T)
@@ -943,6 +961,11 @@ async function descargarExcel() {
     row.getCell('Z').value = { formula: `+K${r}+T${r}+Y${r}` };
     row.getCell('AA').value = { formula: `+Z${r}/D${r}` };
     row.getCell('AB').value = { formula: `AA${r}/(E${r}*$E$13)-1` };
+
+    // Aplicar el estilo de "fila de item" (fondo azul claro) — preserva el look del template
+    for (let c = 1; c <= NUM_COLS; c++) {
+      row.getCell(c).style = clone(itemStyles[c]);
+    }
   }
 
   // 4) Fila de totales (equivalente a la 184 del template original)
@@ -961,6 +984,11 @@ async function descargarExcel() {
   totRow.getCell('X').value = { formula: 'J27/F23+K20/E12+E36' };
   totRow.getCell('Y').value = { formula: `SUM(Y${DATA_START}:Y${T - 1})` };
   totRow.getCell('Z').value = { formula: `SUM(Z${DATA_START}:Z${T - 1})` };
+
+  // Aplicar el estilo de "fila de totales" (negritas, etc.) a la fila T
+  for (let c = 1; c <= NUM_COLS; c++) {
+    totRow.getCell(c).style = clone(totalsStyles[c]);
+  }
 
   // 5) Fila de conversiones (equivalente a la 185)
   const convRow = ws.getRow(ROW_CONV);
