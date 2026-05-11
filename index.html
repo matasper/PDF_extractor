@@ -946,10 +946,13 @@ async function descargarExcelImpl() {
   ws.getCell('E7').value = 'DeLaval';
   ws.getCell('E8').value = extraerNroFactura(nombreArchivo);
 
-  // Limpiar valores DESDE la fila 44 hasta el final del worksheet.
-  // ExcelJS spliceRows/duplicateRow dejan celdas "huérfanas" en las filas siguientes
-  // a la zona duplicada (ej. rows 207+ con datos viejos del template).
-  const lastRow = Math.max(ws.actualRowCount, T + 50);
+  // Limpiar valores DESDE la fila 44 hasta MUCHO MÁS allá del techo.
+  // ExcelJS spliceRows() NO borra realmente las celdas — solo shiftea índices —
+  // y duplicateRow() arrastra todo eso N filas hacia abajo. Quedan fórmulas viejas del
+  // template (=J184/F184-1, =SUM(F44:F45), etc.) huérfanas en filas como la 343-348.
+  // Importante: usamos `rowCount` (no `actualRowCount`) que sí incluye filas con datos
+  // que ExcelJS no contó como "actuales", y le sumamos un colchón generoso.
+  const lastRow = Math.max(ws.rowCount, ws.actualRowCount, T + 200);
   for (let r = DATA_START; r <= lastRow; r++) {
     const row = ws.getRow(r);
     for (let c = 1; c <= NUM_COLS; c++) row.getCell(c).value = null;
