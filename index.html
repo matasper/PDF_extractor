@@ -926,6 +926,18 @@ async function descargarExcelImpl() {
     if (!w.conditionalFormattings) w.conditionalFormattings = [];
   });
 
+  // Snapshot del estilo de la fila 44 (item modelo) por columna ANTES de tocar nada.
+  // Lo usamos después para que la fila de totales (que queda en un hueco sin fills) reciba
+  // los mismos fills/bordes que las filas de items y se vea consistente con la tabla.
+  const NUM_COLS_SNAPSHOT = 28;
+  const fillSnap = {}, borderSnap = {}, alignmentSnap = {};
+  for (let c = 1; c <= NUM_COLS_SNAPSHOT; c++) {
+    const refCell = ws.getRow(44).getCell(c);
+    fillSnap[c]      = refCell.fill      ? JSON.parse(JSON.stringify(refCell.fill))      : null;
+    borderSnap[c]    = refCell.border    ? JSON.parse(JSON.stringify(refCell.border))    : null;
+    alignmentSnap[c] = refCell.alignment ? JSON.parse(JSON.stringify(refCell.alignment)) : null;
+  }
+
   // 🪄 TRUCO: ExcelJS NO aplica bien `cell.font = ...` cuando la celda tiene un style ID
   // específico en el XLSX (como las filas 184-186 que en el template son totales/conversión).
   // Workaround: borramos las filas 45-186 con spliceRows y duplicamos la fila 44 (item modelo)
@@ -1016,23 +1028,67 @@ async function descargarExcelImpl() {
   totRow.getCell('H').value = 0;       // Total Otros gtos Origen (placeholder)
   totRow.getCell('I').value = 3.53;    // Total Seguro (placeholder)
 
-  // Helper para forzar a ExcelJS a darle a cada celda su PROPIO estilo (no compartido).
-  // Asigna `cell.style = {font, numFmt}` con objetos frescos para romper la referencia compartida.
+  // Formatos y helpers. Importante: `cell.style = {...}` con objeto fresco rompe la referencia
+  // compartida que tiene ExcelJS entre celdas con el mismo style ID, así cada celda termina con
+  // su propio estilo único (sin esto, cambiar el numFmt de una afecta a las otras de la fila).
   const FMT_CURRENCY = '_-* #,##0.00_-;-* #,##0.00_-;_-* "-"??_-;_-@_-';
   const FMT_PERCENT  = '0.00%';
-  const aplicarEstiloCelda = (cell, numFmt, bold) => {
+  const tieneFillReal = (f) => f && f.type === 'pattern' && f.pattern && f.pattern !== 'none' && f.fgColor;
+
+  // Para la fila de TOTALES: hereda fills/bordes del item style (snapshot de row 44 como fallback)
+  // así la fila queda visualmente como parte de la tabla, con bold y formato currency.
+  const aplicarEstiloTotales = (cell, numFmt, bold) => {
+    const col = cell.col;
+    const fillCopia      = tieneFillReal(cell.fill) ? JSON.parse(JSON.stringify(cell.fill))      : (fillSnap[col]      ? JSON.parse(JSON.stringify(fillSnap[col]))      : null);
+    const borderCopia    = cell.border              ? JSON.parse(JSON.stringify(cell.border))    : (borderSnap[col]    ? JSON.parse(JSON.stringify(borderSnap[col]))    : null);
+    const alignmentCopia = cell.alignment           ? JSON.parse(JSON.stringify(cell.alignment)) : (alignmentSnap[col] ? JSON.parse(JSON.stringify(alignmentSnap[col])) : null);
     cell.style = {
-      font: { name: 'Calibri', size: 11, bold: !!bold },
-      numFmt: numFmt
+      font:      { name: 'Calibri', size: 11, bold: !!bold },
+      fill:      fillCopia      || { type: 'pattern', pattern: 'none' },
+      border:    borderCopia    || {},
+      alignment: alignmentCopia || {},
+      numFmt:    numFmt
     };
   };
 
-  // Formato moneda + negrita para todas las celdas de la fila de totales
+  // Para celdas de CONVERSIÓN/CONTROL: sin fills/bordes (como en el template original),
+  // solo font + numFmt para ver la fórmula con su formato.
+  const aplicarEstiloCelda = (cell, numFmt, bold) => {
+    cell.style = {
+      font:      { name: 'Calibri', size: 11, bold: !!bold },
+      fill:      { type: 'pattern', pattern: 'none' },
+      border:    {},
+      alignment: {},
+      numFmt:    numFmt
+    };
+  };
+
+  // Formato moneda + negrita + fills heredados del item style para toda la fila de totales
   for (let c = 1; c <= NUM_COLS; c++) {
-    aplicarEstiloCelda(totRow.getCell(c), FMT_CURRENCY, true);
+    aplicarEstiloTotales(totRow.getCell(c), FMT_CURRENCY, true);
   }
 
-  // 5) Fila de conversiones (equivalente a la 185)
+  // 5) ANTES de escribir conversión y control, limpiamos TODAS las celdas
+  //    de las filas ROW_CONV, ROW_CTRL y todas las posteriores.
+  //    Esto borra los fills/bordes heredados del template que harían que las filas
+  //    vacías parezcan parte de la tabla.
+  const estiloVacio = {
+    font: { name: 'Calibri', size: 11 },
+    fill: { type: 'pattern', pattern: 'none' },
+    border: {},
+    alignment: {},
+    numFmt: 'General'
+  };
+  for (let r = ROW_CONV; r <= lastRow; r++) {
+    const row = ws.getRow(r);
+    for (let c = 1; c <= NUM_COLS; c++) {
+      const cell = row.getCell(c);
+      cell.value = null;
+      cell.style = JSON.parse(JSON.stringify(estiloVacio));
+    }
+  }
+
+  // 6) Fila de conversiones (equivalente a la 185 del template)
   const convRow = ws.getRow(ROW_CONV);
   convRow.getCell('F').value = { formula: `+F${T}*$E$13` };
   convRow.getCell('G').value = { formula: `G${T}/F${T}` };
@@ -1045,16 +1101,15 @@ async function descargarExcelImpl() {
   convRow.getCell('R').value = { formula: '+J23/E12' };
   convRow.getCell('Z').value = { formula: `Z${T}/F${ROW_CONV}-1` };
 
-  // Formatos numéricos de la fila de conversión (matchea el template original)
   aplicarEstiloCelda(convRow.getCell('F'), FMT_CURRENCY);
-  aplicarEstiloCelda(convRow.getCell('G'), FMT_PERCENT);   // ratio Flete / Subtotal
+  aplicarEstiloCelda(convRow.getCell('G'), FMT_PERCENT);
   aplicarEstiloCelda(convRow.getCell('H'), FMT_CURRENCY);
   aplicarEstiloCelda(convRow.getCell('I'), FMT_CURRENCY);
-  aplicarEstiloCelda(convRow.getCell('J'), FMT_PERCENT);   // markup Total Invoice / Subtotal - 1
+  aplicarEstiloCelda(convRow.getCell('J'), FMT_PERCENT);
   aplicarEstiloCelda(convRow.getCell('K'), '0.00');
   aplicarEstiloCelda(convRow.getCell('Z'), FMT_PERCENT);
 
-  // 6) Fila de control final (equivalente a la 186)
+  // 7) Fila de control (equivalente a la 186)
   const ctrlRow = ws.getRow(ROW_CTRL);
   ctrlRow.getCell('G').value = { formula: `SUM(G${DATA_START}:G${T})` };
   ctrlRow.getCell('Z').value = { formula: `Z${T}/K${T}-1` };
