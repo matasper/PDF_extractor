@@ -946,9 +946,11 @@ async function descargarExcelImpl() {
   ws.getCell('E7').value = 'DeLaval';
   ws.getCell('E8').value = extraerNroFactura(nombreArchivo);
 
-  // Limpiar valores de la fila 44 original y de todas las duplicadas (mantienen el estilo).
-  // Después del splice+duplicate, los items van en las filas 44 a 44+N-1.
-  for (let r = DATA_START; r <= T - 1; r++) {
+  // Limpiar valores DESDE la fila 44 hasta el final del worksheet.
+  // ExcelJS spliceRows/duplicateRow dejan celdas "huérfanas" en las filas siguientes
+  // a la zona duplicada (ej. rows 207+ con datos viejos del template).
+  const lastRow = Math.max(ws.actualRowCount, T + 50);
+  for (let r = DATA_START; r <= lastRow; r++) {
     const row = ws.getRow(r);
     for (let c = 1; c <= NUM_COLS; c++) row.getCell(c).value = null;
   }
