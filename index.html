@@ -1009,10 +1009,27 @@ async function descargarExcelImpl() {
   totRow.getCell('Y').value = { formula: `SUM(Y${DATA_START}:Y${T - 1})` };
   totRow.getCell('Z').value = { formula: `SUM(Z${DATA_START}:Z${T - 1})` };
 
-  // Aplicar negrita a la fila de totales para que se distinga visualmente
-  // (las celdas en row T están vacías originalmente, así que el setter funciona limpio)
+  // Pre-cargar G/H/I de la fila de totales con valores placeholder (los del template original).
+  // El usuario los reemplaza con los reales de su factura. Sin estos valores, las fórmulas
+  // de la fila de conversión (G208, J208, etc.) dan #DIV/0 o no calculan.
+  totRow.getCell('G').value = 250.35;  // Total Flete (placeholder)
+  totRow.getCell('H').value = 0;       // Total Otros gtos Origen (placeholder)
+  totRow.getCell('I').value = 3.53;    // Total Seguro (placeholder)
+
+  // Helper para forzar a ExcelJS a darle a cada celda su PROPIO estilo (no compartido).
+  // Asigna `cell.style = {font, numFmt}` con objetos frescos para romper la referencia compartida.
+  const FMT_CURRENCY = '_-* #,##0.00_-;-* #,##0.00_-;_-* "-"??_-;_-@_-';
+  const FMT_PERCENT  = '0.00%';
+  const aplicarEstiloCelda = (cell, numFmt, bold) => {
+    cell.style = {
+      font: { name: 'Calibri', size: 11, bold: !!bold },
+      numFmt: numFmt
+    };
+  };
+
+  // Formato moneda + negrita para todas las celdas de la fila de totales
   for (let c = 1; c <= NUM_COLS; c++) {
-    totRow.getCell(c).font = { name: 'Calibri', size: 11, bold: true };
+    aplicarEstiloCelda(totRow.getCell(c), FMT_CURRENCY, true);
   }
 
   // 5) Fila de conversiones (equivalente a la 185)
@@ -1028,10 +1045,21 @@ async function descargarExcelImpl() {
   convRow.getCell('R').value = { formula: '+J23/E12' };
   convRow.getCell('Z').value = { formula: `Z${T}/F${ROW_CONV}-1` };
 
+  // Formatos numéricos de la fila de conversión (matchea el template original)
+  aplicarEstiloCelda(convRow.getCell('F'), FMT_CURRENCY);
+  aplicarEstiloCelda(convRow.getCell('G'), FMT_PERCENT);   // ratio Flete / Subtotal
+  aplicarEstiloCelda(convRow.getCell('H'), FMT_CURRENCY);
+  aplicarEstiloCelda(convRow.getCell('I'), FMT_CURRENCY);
+  aplicarEstiloCelda(convRow.getCell('J'), FMT_PERCENT);   // markup Total Invoice / Subtotal - 1
+  aplicarEstiloCelda(convRow.getCell('K'), '0.00');
+  aplicarEstiloCelda(convRow.getCell('Z'), FMT_PERCENT);
+
   // 6) Fila de control final (equivalente a la 186)
   const ctrlRow = ws.getRow(ROW_CTRL);
   ctrlRow.getCell('G').value = { formula: `SUM(G${DATA_START}:G${T})` };
   ctrlRow.getCell('Z').value = { formula: `Z${T}/K${T}-1` };
+  aplicarEstiloCelda(ctrlRow.getCell('G'), FMT_CURRENCY);
+  aplicarEstiloCelda(ctrlRow.getCell('Z'), FMT_PERCENT);
 
   // 7) Forzar recálculo al abrir
   wb.calcProperties = wb.calcProperties || {};
