@@ -555,7 +555,7 @@ async function leerFragmentosPDF(pdf) {
   return fragmentos;
 }
 
-// 🔥 NUEVO: detecta el número de factura presente en cada página del invoice.
+// detecta el número de factura presente en cada página del invoice.
 // Busca patrones tipo "Number/Date 2738060664 / 05.02.2026" o "Date/Doc. no. 05.02.2026 / 2738060664".
 // Si una página no tiene marcador, hereda el de la página previa (forward-fill).
 function detectarFacturasPorPagina(fragmentos) {
@@ -568,7 +568,7 @@ function detectarFacturasPorPagina(fragmentos) {
   const totalPaginas = Math.max(...Object.keys(porPagina).map(Number));
 
   // Regex flexibles que capturan el número de factura (10+ dígitos).
-  // ⚠️ ORDEN IMPORTANTE: los patrones más específicos (que requieren que la fecha
+  // ORDEN IMPORTANTE: los patrones más específicos (que requieren que la fecha
   // siga al número) van PRIMERO. Si pusiéramos "Number/Date" primero, capturaría
   // por error el RUT del proveedor cuando aparece cerca (ej. "Number/Date  RUT: 217397250018  2738060663 / 05.02.2026").
   const REGEXES = [
@@ -649,7 +649,7 @@ function parsearFilaCoords(fila, cand) {
   };
 }
 function extraerItemsDeFragmentos(fragmentos) {
-  // 🔥 NUEVO: detectar factura por página antes de iterar items
+  //  detectar factura por página antes de iterar items
   const facturasPorPagina = detectarFacturasPorPagina(fragmentos);
 
   const items = [];
@@ -683,7 +683,7 @@ function extraerItemsDeFragmentos(fragmentos) {
       factura, posicion   // 🔥 nuevos campos para matching con DUA
     });
   }
-  // ⚠️ NO ordenamos por ID — preservamos el orden de lectura del PDF para que las
+  // NO ordenamos por ID — preservamos el orden de lectura del PDF para que las
   // posiciones sigan correspondiéndose con la numeración del DUA.
   return items;
 }
@@ -841,9 +841,9 @@ function buscarDescripcionTexto(lineas, idxItem) {
   }
   return '';
 }
-// 🔥 NUEVO: regex que detecta el header de factura en una línea del OCR.
+// regex que detecta el header de factura en una línea del OCR.
 // Acepta los dos formatos que usa DeLaval: "Number/Date NNN / DD.MM.YYYY" y "Date/Doc. no. DD.MM.YYYY / NNN".
-// ⚠️ El número siempre debe venir junto a una fecha para evitar capturar el RUT del proveedor.
+// El número siempre debe venir junto a una fecha para evitar capturar el RUT del proveedor.
 const RE_FACTURA_HEADER = /(?:\b(\d{10,})\s*\/\s*\d{1,2}[.\/-]\d{1,2}[.\/-]\d{2,4}\b)|(?:\b\d{1,2}[.\/-]\d{1,2}[.\/-]\d{2,4}\s*\/\s*(\d{10,})\b)/i;
 
 function extraerItemsDeTexto(texto) {
@@ -852,7 +852,7 @@ function extraerItemsDeTexto(texto) {
   const items = [];
   const yaUsados = new Set();
 
-  // 🔥 estado de factura actual + contador de posiciones (igual lógica que el método de coordenadas)
+  // estado de factura actual + contador de posiciones (igual lógica que el método de coordenadas)
   let facturaActual = '';
   const contadorFactura = {};
 
@@ -891,10 +891,10 @@ function extraerItemsDeTexto(texto) {
       net: norm(parsed.net),
       total: norm(parsed.total),
       __corregido: !!parsed.__corregido,
-      factura: facturaActual, posicion   // 🔥 nuevos campos
+      factura: facturaActual, posicion 
     });
   }
-  // ⚠️ NO ordenamos por ID — preservamos orden de lectura para que las posiciones sean válidas.
+  // — preservamos orden de lectura para que las posiciones sean válidas.
   return items;
 }
 
@@ -1000,7 +1000,7 @@ async function procesarDUA(file) {
   if (claves.length > 5) log(`    ... y ${claves.length - 5} más`, 'dim');
 }
 
-// 🔥 NUEVO: busca tributos por POSICIÓN dentro de la factura.
+// busca tributos por POSICIÓN dentro de la factura.
 // El "Item N" del DUA no es un ID, sino la N-ésima posición del item dentro de la factura
 // correspondiente, contando desde el primer item de esa factura.
 function buscarTributosPorPosicion(posicion, factura) {
@@ -1101,7 +1101,7 @@ async function procesarTodo() {
     }
     await procesarArchivoInvoice(invoiceFile);
 
-    // 🔥 NUEVO: cruce por (posición|factura).
+    // cruce por (posición|factura).
     // Cada item del invoice ya viene con su factura detectada y su posición 1-based.
     // El DUA contiene las claves "posicion|factura" porque su "Item N" es la N-ésima posición.
     let cruzados = 0;
@@ -1114,7 +1114,7 @@ async function procesarTodo() {
       }
     }
 
-    // 🔥 Una vez asignadas posición + factura + tributos como propiedades de cada item,
+    // Una vez asignadas posición + factura + tributos como propiedades de cada item,
     // podemos ordenar libremente para presentación. Replicamos el orden histórico:
     // ascendente por ID de item (0010, 0020, 0030, ...). El sort de JS es estable,
     // así que cuando un ID se repite en otra factura, ese duplicado aparece justo debajo.
@@ -1124,7 +1124,7 @@ async function procesarTodo() {
       log(`▸ Invoice: ${facturasInvoice.size} factura(s) detectada(s) → ${[...facturasInvoice].join(', ') || '(ninguna)'}`, 'dim');
       log(`▸ Cruce Invoice ↔ DUA: ${cruzados}/${itemsGlobal.length} ítem(s) con tributos asignados`, cruzados > 0 ? 'ok' : 'warn');
 
-      // 🔥 Volcado diagnóstico: lista TODOS los items con su factura y posición detectadas.
+      // Volcado diagnóstico: lista TODOS los items con su factura y posición detectadas.
       // Esto sirve para verificar manualmente que la detección de facturas y el conteo
       // de posiciones esté funcionando bien.
       log(`▸ Volcado completo (Item · Material · Factura · Pos · tributos asignados):`, 'step');
@@ -1395,7 +1395,7 @@ async function descargarExcelImpl() {
     row.getCell('J').value = { formula: `+G${r}+F${r}+I${r}+H${r}` };
     row.getCell('K').value = { formula: `+J${r}*E$13` };
 
-    // 🔥 NUEVO: si tenemos DUA, escribir las alícuotas en L, M, N, O
+    // si tenemos DUA, escribir las alícuotas en L, M, N, O
     if (modoDUA && it.tributos) {
       row.getCell(TRIBUTO_A_COLUMNA.imaduni).value = it.tributos.imaduni || 0;
       row.getCell(TRIBUTO_A_COLUMNA.recMin ).value = it.tributos.recMin  || 0;
@@ -1410,7 +1410,7 @@ async function descargarExcelImpl() {
     row.getCell('T').value = { formula: `SUM(P${r}:S${r})` };
     row.getCell('U').value = { formula: `+$U$${T}/$K$${T}*K${r}` };
     row.getCell('V').value = { formula: `+$V$${T}/$K$${T}*K${r}` };
-    // 🔥 W = fletes internos. Antes pasaba por la fila de totales ($W$T) cuyo origen
+    // W = fletes internos. Antes pasaba por la fila de totales ($W$T) cuyo origen
     // era E37 y no reflejaba bien el valor. Ahora distribuye F37 (fletes internos)
     // directamente, proporcional al valor K de cada item.
     row.getCell('W').value = { formula: `+$F$37/$K$${T}*K${r}` };
@@ -1431,7 +1431,7 @@ async function descargarExcelImpl() {
   totRow.getCell('T').value = { formula: `SUM(T${DATA_START}:T${T - 1})` };
   totRow.getCell('U').value = { formula: '+E35+J28/F23' };
   totRow.getCell('V').value = { formula: '+(J35+J36)/E12+E30+E31+E32' };
-  // 🔥 W de totales = suma de los W de items, que distribuye F37. Antes era "E37" (incorrecto).
+  // W de totales = suma de los W de items, que distribuye F37. Antes era "E37" (incorrecto).
   totRow.getCell('W').value = { formula: `SUM(W${DATA_START}:W${T - 1})` };
   totRow.getCell('X').value = { formula: 'J27/F23+K20/E12+E36' };
   totRow.getCell('Y').value = { formula: `SUM(Y${DATA_START}:Y${T - 1})` };
@@ -1506,7 +1506,7 @@ async function descargarExcelImpl() {
   aplicarEstiloCelda(ctrlRow.getCell('G'), FMT_CURRENCY);
   aplicarEstiloCelda(ctrlRow.getCell('Z'), FMT_PERCENT);
 
-  // 🔥 Autoajustar ancho de columnas para que los datos no queden cortados.
+  // Autoajustar ancho de columnas para que los datos no queden cortados.
   // Calcula el ancho necesario en base al header (fila 43) y al contenido literal
   // que escribimos en las filas de items (Item, Material, Cantidad, Precio).
   // Para las celdas con fórmulas estimamos la longitud del resultado típico (2 decimales).
