@@ -1505,6 +1505,46 @@ async function descargarExcelImpl() {
   ctrlRow.getCell('Z').value = { formula: `Z${T}/K${T}-1` };
   aplicarEstiloCelda(ctrlRow.getCell('G'), FMT_CURRENCY);
   aplicarEstiloCelda(ctrlRow.getCell('Z'), FMT_PERCENT);
+
+  // 🔥 Autoajustar ancho de columnas para que los datos no queden cortados.
+  // Calcula el ancho necesario en base al header (fila 43) y al contenido literal
+  // que escribimos en las filas de items (Item, Material, Cantidad, Precio).
+  // Para las celdas con fórmulas estimamos la longitud del resultado típico (2 decimales).
+  //
+  // Importante: solo AUMENTA el ancho; nunca lo reduce, así respeta los anchos
+  // que el template ya tiene bien configurados.
+  const PADDING = 2;
+  const ANCHO_MIN_FORMULA = 11;     // suficiente para "1,055.65" o similares
+  for (let c = 1; c <= NUM_COLS; c++) {
+    let maxLen = 0;
+
+    // Header (fila 43)
+    const headerVal = ws.getRow(43).getCell(c).value;
+    if (headerVal != null) {
+      maxLen = Math.max(maxLen, String(headerVal).length);
+    }
+
+    // Filas de items: solo valores literales (Item, Material, Cantidad, Precio)
+    for (let r = DATA_START; r < T; r++) {
+      const v = ws.getRow(r).getCell(c).value;
+      if (v == null) continue;
+      if (typeof v === 'object' && v.formula) {
+        // Es una fórmula: el resultado típico es numérico con 2 decimales;
+        // garantizamos un mínimo razonable para que no se corte.
+        maxLen = Math.max(maxLen, ANCHO_MIN_FORMULA);
+      } else {
+        maxLen = Math.max(maxLen, String(v).length);
+      }
+    }
+
+    if (maxLen === 0) continue;
+
+    const col = ws.getColumn(c);
+    const anchoActual = col.width || 0;
+    const anchoNuevo  = maxLen + PADDING;
+    if (anchoNuevo > anchoActual) col.width = anchoNuevo;
+  }
+
   wb.calcProperties = wb.calcProperties || {};
   wb.calcProperties.fullCalcOnLoad = true;
   const buf = await wb.xlsx.writeBuffer();
