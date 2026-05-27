@@ -1654,6 +1654,18 @@ function crearHojaParaImprimir(wb, sourceSheetName, N, DATA_START, T) {
     'S': 'Z',  'T': 'AA', 'U': 'AB'
   };
 
+  // 🔥 Patrón de colores por columna en las filas de items (replica el archivo de referencia):
+  //   - Columnas de totales/destacados (D, H, M, R, S): azul medio (resaltado)
+  //   - Columna % (U): azul muy claro
+  //   - Resto: azul claro (default)
+  const COLS_AZUL_MEDIO    = new Set(['D', 'H', 'M', 'R', 'S']);
+  const COLS_AZUL_MUYCLARO = new Set(['U']);
+  const fillItemCol = (col) => {
+    if (COLS_AZUL_MEDIO.has(col))    return C.azulMedio;
+    if (COLS_AZUL_MUYCLARO.has(col)) return C.azulMuyClaro;
+    return C.azulClaro;
+  };
+
   // Filas de items: cada celda es una fórmula que apunta a la fila correspondiente en la hoja principal
   for (let i = 0; i < N; i++) {
     const rPrint = FIRST_DATA + i;
@@ -1663,18 +1675,40 @@ function crearHojaParaImprimir(wb, sourceSheetName, N, DATA_START, T) {
       cell.value = { formula: `${SRC}!${colSrc}${rSrc}` };
       // Formato numérico para columnas que muestran montos / porcentajes
       const numFmt = (colDest === 'U') ? FMT_PERCENT_2 : FMT_CURRENCY;
-      estilo(cell, { numFmt });
+      estilo(cell, { numFmt, fill: fillItemCol(colDest) });
     }
   }
 
   // Fila de TOTALES (TOTAL_ROW)
-  const totFmt = { font: { bold: true }, border: { top: B_THIN, bottom: B_THIN }, numFmt: FMT_CURRENCY };
+  // 🔥 Patrón de colores de la fila de totales (del archivo de referencia):
+  //   - D, G, I, J, K, L → azul claro
+  //   - H, M, R, S → azul medio (totales destacados)
+  //   - N, O, P, Q → azul accent (gastos externos: despachante / portuarios / flete / aduana)
+  //   - E, F → sin color
+  const TOTAL_AZUL_MEDIO  = new Set(['H', 'M', 'R', 'S']);
+  const TOTAL_AZUL_ACCENT = new Set(['N', 'O', 'P', 'Q']);
+  const TOTAL_AZUL_CLARO  = new Set(['D', 'G', 'I', 'J', 'K', 'L']);
+  const fillTotalCol = (col) => {
+    if (TOTAL_AZUL_MEDIO.has(col))  return C.azulMedio;
+    if (TOTAL_AZUL_ACCENT.has(col)) return C.azulAccent;
+    if (TOTAL_AZUL_CLARO.has(col))  return C.azulClaro;
+    return null;
+  };
+  const totEstilo = (cell, col) => {
+    const fill = fillTotalCol(col);
+    estilo(cell, {
+      font: { bold: true },
+      border: { top: B_THIN, bottom: B_THIN },
+      numFmt: FMT_CURRENCY,
+      ...(fill ? { fill } : {})
+    });
+  };
   // Columnas D, G, H, I, J, K, L, M → SUM internas de la propia hoja
   const sumCols = ['D','G','H','I','J','K','L','M'];
   for (const col of sumCols) {
     const cell = pi.getCell(`${col}${TOTAL_ROW}`);
     cell.value = { formula: `SUM(${col}${FIRST_DATA}:${col}${LAST_DATA})` };
-    estilo(cell, totFmt);
+    totEstilo(cell, col);
   }
   // Columnas E, F, N, O, P, Q, R, S → referencias a la fila de totales de la hoja principal
   const refCols = {
@@ -1684,7 +1718,7 @@ function crearHojaParaImprimir(wb, sourceSheetName, N, DATA_START, T) {
   for (const [colDest, colSrc] of Object.entries(refCols)) {
     const cell = pi.getCell(`${colDest}${TOTAL_ROW}`);
     cell.value = { formula: `${SRC}!${colSrc}${T}` };
-    estilo(cell, totFmt);
+    totEstilo(cell, colDest);
   }
 
   // Filas de CONVERSIÓN A PESOS y porcentajes
