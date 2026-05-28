@@ -2,8 +2,10 @@
 // Backend del extractor DeLaval — gestiona la base de tributos en D1.
 //
 // Endpoints disponibles:
-//   GET  /tributos?materials=A,B,C  → consulta tributos guardados para esos materiales
-//   POST /tributos                  → guarda/actualiza tributos (requiere frase de confirmación)
+//   GET  /tributos?materials=A,B,C       → tributos guardados para esos materiales
+//   GET  /tributos?all=1&page=N&size=50  → listado paginado de toda la tabla
+//   GET  /tributos?history=MATERIAL      → historial de cambios de un material
+//   POST /tributos                       → guarda/actualiza (requiere frase de confirmación)
 //
 // Bindings esperados en Pages:
 //   env.DB              → la D1 database "extractor-tributos"
@@ -25,21 +27,41 @@ export async function onRequestOptions() {
   return new Response(null, { status: 204, headers: corsHeaders });
 }
 
-// ── GET: consulta tributos guardados ───────────────────
-// Query: /tributos?materials=184001343,94158680,...
-// Respuesta: { data: [ { material, imaduni, rec_min, rec_adi, tasa_con, ... }, ... ] }
+// ── GET: 3 modos según query params ────────────────────
 export async function onRequestGet({ request, env }) {
   if (!env.DB) return json(500, { error: 'D1 binding "DB" no configurado en Cloudflare Pages' });
 
   const url = new URL(request.url);
+
+  // Modo 1: por lista de materials (consulta puntual)
+  if (url.searchParams.has('materials')) {
+    return await modeByMaterials(url, env);
+  }
+
+  // Modo 2: paginado all
+  if (url.searchParams.has('all')) {
+    return await modePaginated(url, env);
+  }
+
+  // Modo 3: historial de un material
+  if (url.searchParams.has('history')) {
+    return await modeHistory(url, env);
+  }
+
+  // Default: respuesta vacía con instrucciones
+  return json(200, {
+    data: [],
+    hint: 'Use ?materials=A,B,C  |  ?all=1&page=N&size=50  |  ?history=MATERIAL'
+  });
+}
+
+// ── Modo 1: consulta por lista de materials ────────────
+async function modeByMaterials(url, env) {
   const param = url.searchParams.get('materials') || '';
   const materials = param.split(',').map(s => s.trim()).filter(Boolean);
 
-  if (materials.length === 0) {
-    return json(200, { data: [] });
-  }
+  if (materials.length === 0) return json(200, { data: [] });
 
-  // D1 limita a ~100 parámetros por query, así que dividimos en bloques por las dudas
   const BLOCK = 90;
   const allRows = [];
   for (let i = 0; i < materials.length; i += BLOCK) {
@@ -51,22 +73,65 @@ export async function onRequestGet({ request, env }) {
     const result = await stmt.all();
     if (result.results) allRows.push(...result.results);
   }
-
   return json(200, { data: allRows });
 }
 
+// ── Modo 2: paginado completo (con búsqueda opcional) ──
+// Query params: page (1-indexed), size (default 50, max 200), search (opcional)
+async function modePaginated(url, env) {
+  const page   = Math.max(1, parseInt(url.searchParams.get('page'), 10) || 1);
+  const size   = Math.min(200, Math.max(1, parseInt(url.searchParams.get('size'), 10) || 50));
+  const search = (url.searchParams.get('search') || '').trim();
+  const offset = (page - 1) * size;
+
+  // WHERE clause y bindings según haya o no búsqueda
+  let where = '';
+  const bindings = [];
+  if (search) {
+    where = 'WHERE material LIKE ?';
+    bindings.push('%' + search + '%');
+  }
+
+  // Total de filas (para el conteo de páginas)
+  const countResult = await env.DB.prepare(
+    `SELECT COUNT(*) AS total FROM tributos ${where}`
+  ).bind(...bindings).first();
+  const total = countResult?.total || 0;
+
+  // Filas de la página actual
+  const rowsResult = await env.DB.prepare(
+    `SELECT * FROM tributos ${where} ORDER BY material ASC LIMIT ? OFFSET ?`
+  ).bind(...bindings, size, offset).all();
+
+  return json(200, {
+    data: rowsResult.results || [],
+    page,
+    size,
+    total,
+    totalPages: Math.ceil(total / size)
+  });
+}
+
+// ── Modo 3: historial de un material específico ────────
+async function modeHistory(url, env) {
+  const material = (url.searchParams.get('history') || '').trim();
+  const limit    = Math.min(200, Math.max(1, parseInt(url.searchParams.get('limit'), 10) || 50));
+
+  if (!material) return json(400, { error: 'Falta material en ?history=' });
+
+  const result = await env.DB.prepare(
+    `SELECT * FROM tributos_history
+     WHERE material = ?
+     ORDER BY changed_at DESC
+     LIMIT ?`
+  ).bind(material, limit).all();
+
+  return json(200, { material, data: result.results || [] });
+}
+
 // ── POST: guarda/actualiza tributos ────────────────────
-// Body JSON esperado:
-//   {
-//     password: "CONFIRMAR CAMBIO",
-//     changedBy: "Germán" (opcional, máx 100 chars),
-//     updates: [
-//       { material: "184001343", imaduni: 6.20, rec_min: 6, rec_adi: 4, tasa_con: 5,
-//         ultima_factura: "2738060664", ultima_pos_dua: 2, ultimo_dua: "069292" },
-//       ...
-//     ]
-//   }
-// Cada update se aplica como UPSERT en `tributos` y queda registrado en `tributos_history`.
+// Body JSON:
+//   { password, changedBy?, updates: [ {material, imaduni, rec_min, rec_adi, tasa_con, ...}, ... ] }
 export async function onRequestPost({ request, env }) {
   if (!env.DB) return json(500, { error: 'D1 binding "DB" no configurado' });
   if (!env.WRITE_PASSWORD) return json(500, { error: 'Secret "WRITE_PASSWORD" no configurado' });
@@ -78,7 +143,6 @@ export async function onRequestPost({ request, env }) {
     return json(400, { error: 'Body inválido (no es JSON)' });
   }
 
-  // Validar frase de confirmación (puede venir en header o en el body)
   const password = request.headers.get('X-Write-Password') || body.password;
   if (!password || password !== env.WRITE_PASSWORD) {
     return json(401, { error: 'Frase de confirmación incorrecta o faltante' });
@@ -92,7 +156,6 @@ export async function onRequestPost({ request, env }) {
   const now = new Date().toISOString();
   const by  = (changedBy || '').toString().slice(0, 100) || null;
 
-  // Para distinguir create vs update en el historial, miramos qué materiales ya existen
   const matsArr = updates.map(u => u.material).filter(Boolean);
   if (matsArr.length === 0) return json(400, { error: 'Updates sin material code' });
 
@@ -107,7 +170,6 @@ export async function onRequestPost({ request, env }) {
     for (const r of (result.results || [])) existingSet.add(r.material);
   }
 
-  // Statements preparados para reusar
   const stmtUpsert = env.DB.prepare(`
     INSERT INTO tributos (material, imaduni, rec_min, rec_adi, tasa_con, ultima_factura, ultima_pos_dua, ultimo_dua, updated_at, updated_by)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

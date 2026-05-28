@@ -490,6 +490,116 @@
     font-size: 0.78rem; color: var(--muted);
     margin-top: 0.4rem;
   }
+
+  /* ── Panel "Ver tributos guardados" (modal grande) ────── */
+  .db-modal {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(6px);
+    display: none;
+    z-index: 200;
+    align-items: center; justify-content: center;
+    padding: 2rem;
+  }
+  .db-modal.visible { display: flex; }
+  .db-modal-content {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    max-width: 1100px; width: 100%;
+    max-height: 90vh; display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .db-modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1rem 1.4rem;
+    border-bottom: 1px solid var(--border);
+    gap: 1rem;
+  }
+  .db-modal-title { font-size: 1.05rem; font-weight: 600; }
+  .db-modal-toolbar {
+    display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;
+  }
+  .db-search {
+    padding: 0.45rem 0.7rem;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    min-width: 220px;
+  }
+  .db-search:focus { outline: none; border-color: var(--accent); }
+  .db-modal-body {
+    flex: 1; overflow-y: auto;
+    padding: 1rem 1.4rem;
+  }
+  .db-table {
+    width: 100%; border-collapse: collapse; font-size: 0.78rem;
+  }
+  .db-table th, .db-table td {
+    padding: 0.5rem 0.7rem; text-align: left;
+    border-bottom: 1px solid rgba(48,54,61,0.5);
+    white-space: nowrap;
+  }
+  .db-table th {
+    font-family: var(--mono); font-size: 0.7rem; font-weight: 600;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;
+    background: var(--surface2);
+    position: sticky; top: 0;
+  }
+  .db-table td.mat { font-family: var(--mono); font-weight: 600; color: var(--accent2); }
+  .db-table td.val { font-family: var(--mono); text-align: right; }
+  .db-table td.date { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+  .db-table tr:hover td { background: rgba(31,111,235,0.04); }
+  .db-row-btn {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--muted); padding: 0.25rem 0.6rem;
+    border-radius: 4px; font-family: var(--mono); font-size: 0.72rem;
+    cursor: pointer;
+  }
+  .db-row-btn:hover { color: var(--accent2); border-color: var(--accent2); }
+  .db-modal-footer {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.8rem 1.4rem;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .db-paging { display: flex; gap: 0.4rem; align-items: center; font-family: var(--mono); font-size: 0.82rem; color: var(--muted); }
+  .db-paging button {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); padding: 0.35rem 0.7rem; border-radius: 4px;
+    cursor: pointer; font-family: var(--mono); font-size: 0.78rem;
+  }
+  .db-paging button:hover:not(:disabled) { border-color: var(--accent); }
+  .db-paging button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .btn-view-db {
+    background: var(--surface2); color: var(--text); border-color: var(--border);
+  }
+  .btn-view-db:hover { background: var(--surface); border-color: var(--muted); }
+
+  /* Modal de historial — pequeño, anidado sobre el modal de DB */
+  .history-modal {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 300;
+    display: none; align-items: center; justify-content: center;
+    padding: 2rem;
+  }
+  .history-modal.visible { display: flex; }
+  .history-modal-content {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    max-width: 800px; width: 100%; max-height: 80vh;
+    display: flex; flex-direction: column;
+  }
+  .history-empty {
+    padding: 2rem; text-align: center;
+    color: var(--muted); font-family: var(--mono); font-size: 0.85rem;
+  }
 </style>
 </head>
 <body>
@@ -520,6 +630,7 @@
     extractor-delaval
   </div>
   <div class="badge">v3.1 + DUA</div>
+  <button class="btn btn-view-db" style="margin-left:auto" onclick="abrirVisorDB()">📚 Ver base de datos</button>
 </header>
 <main>
 
@@ -635,6 +746,72 @@
     </div>
   </div>
 </div>
+<!-- ── Modal: Visor de la base de datos ─────────────────── -->
+<div class="db-modal" id="db-modal">
+  <div class="db-modal-content">
+    <div class="db-modal-header">
+      <div class="db-modal-title">📚 Base de datos de tributos</div>
+      <div class="db-modal-toolbar">
+        <input type="text" class="db-search" id="db-search" placeholder="Buscar por material…" autocomplete="off">
+        <button class="db-row-btn" onclick="exportarCSV()">⬇ Exportar CSV</button>
+        <button class="db-row-btn" onclick="cerrarVisorDB()">✕ Cerrar</button>
+      </div>
+    </div>
+    <div class="db-modal-body" id="db-modal-body">
+      <table class="db-table">
+        <thead>
+          <tr>
+            <th>Material</th>
+            <th>Tasa</th><th>Rec.Mín</th><th>IMADUNI</th><th>Rec.Adic</th>
+            <th>Última factura</th><th>Pos. DUA</th>
+            <th>Actualizado</th><th>Por</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="db-tbody">
+          <tr><td colspan="10" class="history-empty">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="db-modal-footer">
+      <div class="db-paging">
+        <span id="db-info">—</span>
+      </div>
+      <div class="db-paging">
+        <button id="db-prev" onclick="paginaDB(-1)">◀ Anterior</button>
+        <span id="db-page-label">página 1 de 1</span>
+        <button id="db-next" onclick="paginaDB(1)">Siguiente ▶</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: Historial de un material ──────────────────── -->
+<div class="history-modal" id="history-modal">
+  <div class="history-modal-content">
+    <div class="db-modal-header">
+      <div class="db-modal-title">Historial de <span id="history-mat" class="modal-frase-target"></span></div>
+      <button class="db-row-btn" onclick="cerrarHistorial()">✕ Cerrar</button>
+    </div>
+    <div class="db-modal-body" id="history-body">
+      <table class="db-table">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Acción</th>
+            <th>Tasa</th><th>Rec.Mín</th><th>IMADUNI</th><th>Rec.Adic</th>
+            <th>Última factura</th><th>Pos.</th>
+            <th>Por</th>
+          </tr>
+        </thead>
+        <tbody id="history-tbody">
+          <tr><td colspan="9" class="history-empty">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <footer>
   Los archivos se procesan localmente en tu navegador — ningún dato se sube a internet
 </footer>
@@ -2409,7 +2586,6 @@ function abrirModalConfirmar() {
   document.getElementById('modal-mensaje').textContent = '';
   document.getElementById('btn-confirmar-final').disabled = true;
   document.getElementById('modal-confirmar').classList.remove('hidden');
-  // Habilita el botón solo si la frase es exacta
   document.getElementById('frase-confirmacion').oninput = (e) => {
     const ok = e.target.value === 'CONFIRMAR CAMBIO';
     document.getElementById('btn-confirmar-final').disabled = !ok;
@@ -2421,7 +2597,6 @@ function cerrarModalConfirmar() {
   document.getElementById('modal-confirmar').classList.add('hidden');
 }
 
-// Ejecuta el POST al backend
 async function ejecutarUpdate() {
   const seleccionados = obtenerSeleccionados();
   if (seleccionados.length === 0) { cerrarModalConfirmar(); return; }
@@ -2437,19 +2612,12 @@ async function ejecutarUpdate() {
     const resp = await fetch('/tributos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        password: frase,
-        changedBy: nombre,
-        updates: seleccionados
-      })
+      body: JSON.stringify({ password: frase, changedBy: nombre, updates: seleccionados })
     });
     const data = await resp.json();
-    if (!resp.ok || data.error) {
-      throw new Error(data.error || `HTTP ${resp.status}`);
-    }
+    if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`);
     log(`✅ ${data.count} tributo(s) actualizado(s) en la base${nombre ? ' por ' + nombre : ''}`, 'ok');
     cerrarModalConfirmar();
-    // Refrescamos la comparación para que reflejen los nuevos valores guardados
     await ejecutarComparacionConNube();
   } catch (e) {
     document.getElementById('modal-mensaje').textContent = '❌ Error: ' + e.message;
@@ -2457,9 +2625,7 @@ async function ejecutarUpdate() {
   }
 }
 
-// Función pública: dispara la comparación con la nube usando itemsGlobal actual
 async function ejecutarComparacionConNube() {
-  // Lista de materiales únicos del invoice
   const matsSet = new Set();
   for (const it of itemsGlobal) if (it.material) matsSet.add(it.material);
   const materiales = [...matsSet];
@@ -2468,7 +2634,6 @@ async function ejecutarComparacionConNube() {
   const guardados = await fetchTributosGuardados(materiales);
 
   if (guardados === null) {
-    // Backend no disponible (probablemente local sin server, o sin internet)
     document.getElementById('diff-panel').classList.remove('visible');
     return;
   }
@@ -2476,6 +2641,170 @@ async function ejecutarComparacionConNube() {
   const diffs = compararConGuardados(itemsGlobal, guardados);
   log(`  ${diffs.nuevos.length} nuevo(s), ${diffs.cambiados.length} con cambios, ${diffs.iguales.length} igual(es)`, 'dim');
   mostrarDiffPanel(diffs);
+}
+
+// ══════════════════════════════════════════════════════
+// VISOR DE LA BASE DE DATOS (paginado + búsqueda + CSV + historial)
+// ══════════════════════════════════════════════════════
+
+const DB_PAGE_SIZE = 50;
+let dbState = { page: 1, totalPages: 1, total: 0, search: '', rows: [] };
+
+function abrirVisorDB() {
+  document.getElementById('db-modal').classList.add('visible');
+  document.getElementById('db-search').value = '';
+  dbState.search = '';
+  dbState.page = 1;
+  cargarPaginaDB();
+}
+function cerrarVisorDB() {
+  document.getElementById('db-modal').classList.remove('visible');
+}
+
+async function cargarPaginaDB() {
+  const tbody = document.getElementById('db-tbody');
+  tbody.innerHTML = '<tr><td colspan="10" class="history-empty">Cargando…</td></tr>';
+  try {
+    const params = new URLSearchParams({ all: '1', page: dbState.page, size: DB_PAGE_SIZE });
+    if (dbState.search) params.set('search', dbState.search);
+    const resp = await fetch('/tributos?' + params.toString());
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    dbState.rows = data.data || [];
+    dbState.total = data.total || 0;
+    dbState.totalPages = data.totalPages || 1;
+    renderTablaDB();
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="10" class="history-empty">❌ Error: ${e.message}</td></tr>`;
+  }
+}
+
+function renderTablaDB() {
+  const tbody = document.getElementById('db-tbody');
+  if (dbState.rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="10" class="history-empty">No hay registros${dbState.search ? ' para "' + dbState.search + '"' : ''}.</td></tr>`;
+  } else {
+    const escapeHtml = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    tbody.innerHTML = dbState.rows.map(r => `
+      <tr>
+        <td class="mat">${escapeHtml(r.material)}</td>
+        <td class="val">${fmtTrib(r.tasa_con)}</td>
+        <td class="val">${fmtTrib(r.rec_min)}</td>
+        <td class="val">${fmtTrib(r.imaduni)}</td>
+        <td class="val">${fmtTrib(r.rec_adi)}</td>
+        <td>${escapeHtml(r.ultima_factura)}</td>
+        <td class="val">${r.ultima_pos_dua ?? '—'}</td>
+        <td class="date">${fmtFecha(r.updated_at)}</td>
+        <td>${escapeHtml(r.updated_by || '—')}</td>
+        <td><button class="db-row-btn" onclick="verHistorial('${escapeHtml(r.material)}')">Historial</button></td>
+      </tr>
+    `).join('');
+  }
+  document.getElementById('db-info').textContent =
+    dbState.total === 0 ? 'Sin resultados' : `${dbState.total} registro(s) en total`;
+  document.getElementById('db-page-label').textContent =
+    `página ${dbState.page} de ${dbState.totalPages || 1}`;
+  document.getElementById('db-prev').disabled = dbState.page <= 1;
+  document.getElementById('db-next').disabled = dbState.page >= dbState.totalPages;
+}
+
+function paginaDB(delta) {
+  const newPage = dbState.page + delta;
+  if (newPage < 1 || newPage > dbState.totalPages) return;
+  dbState.page = newPage;
+  cargarPaginaDB();
+}
+
+let dbSearchTimer = null;
+document.addEventListener('DOMContentLoaded', () => {
+  const input = document.getElementById('db-search');
+  if (input) {
+    input.addEventListener('input', (e) => {
+      clearTimeout(dbSearchTimer);
+      dbSearchTimer = setTimeout(() => {
+        dbState.search = e.target.value.trim();
+        dbState.page = 1;
+        cargarPaginaDB();
+      }, 350);
+    });
+  }
+});
+
+function fmtFecha(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString('es-UY', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  } catch (e) { return iso; }
+}
+
+function cerrarHistorial() {
+  document.getElementById('history-modal').classList.remove('visible');
+}
+
+async function verHistorial(material) {
+  document.getElementById('history-mat').textContent = material;
+  const tbody = document.getElementById('history-tbody');
+  tbody.innerHTML = '<tr><td colspan="9" class="history-empty">Cargando…</td></tr>';
+  document.getElementById('history-modal').classList.add('visible');
+  try {
+    const resp = await fetch('/tributos?history=' + encodeURIComponent(material) + '&limit=200');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    const rows = data.data || [];
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" class="history-empty">Sin registros de historial para este material.</td></tr>';
+      return;
+    }
+    const escapeHtml = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td class="date">${fmtFecha(r.changed_at)}</td>
+        <td><span class="diff-stat ${r.action === 'create' ? 'nuevos' : 'cambiados'}"><strong>${r.action}</strong></span></td>
+        <td class="val">${fmtTrib(r.tasa_con)}</td>
+        <td class="val">${fmtTrib(r.rec_min)}</td>
+        <td class="val">${fmtTrib(r.imaduni)}</td>
+        <td class="val">${fmtTrib(r.rec_adi)}</td>
+        <td>${escapeHtml(r.ultima_factura)}</td>
+        <td class="val">${r.ultima_pos_dua ?? '—'}</td>
+        <td>${escapeHtml(r.changed_by || '—')}</td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="9" class="history-empty">❌ Error: ${e.message}</td></tr>`;
+  }
+}
+
+async function exportarCSV() {
+  try {
+    const params = new URLSearchParams({ all: '1', page: '1', size: '10000' });
+    if (dbState.search) params.set('search', dbState.search);
+    const resp = await fetch('/tributos?' + params.toString());
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    const rows = data.data || [];
+    if (rows.length === 0) { alert('No hay registros para exportar.'); return; }
+    const HEADS = ['material', 'tasa_con', 'rec_min', 'imaduni', 'rec_adi',
+                   'ultima_factura', 'ultima_pos_dua', 'ultimo_dua', 'updated_at', 'updated_by'];
+    const csv = [HEADS.join(';')];
+    for (const r of rows) {
+      const vals = HEADS.map(k => {
+        const v = r[k];
+        if (v == null) return '';
+        const s = String(v);
+        return /[;"\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+      });
+      csv.push(vals.join(';'));
+    }
+    const blob = new Blob(['\uFEFF' + csv.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `tributos_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  } catch (e) {
+    alert('Error al exportar: ' + e.message);
+  }
 }
 
 // ── Drag & Drop ──────────────────────────────────────
@@ -2495,29 +2824,17 @@ function registrarDropZone(zoneId, inputId, onFile) {
   zone.addEventListener('click', e => { if (e.target.tagName !== 'BUTTON') input.click(); });
 }
 
-// Manejador del invoice
 function manejarInvoice(file) {
-  if (!file.name.toLowerCase().endsWith('.pdf')) {
-    alert('Solo se aceptan archivos PDF'); return;
-  }
+  if (!file.name.toLowerCase().endsWith('.pdf')) { alert('Solo se aceptan archivos PDF'); return; }
   invoiceFile = file;
   const zone = document.getElementById('drop-zone');
   zone.classList.add('has-file');
   document.getElementById('invoice-filename').textContent = '✓ ' + file.name;
-  // En modo "solo invoice": procesar de una
-  if (!modoDUA) {
-    // Wrappear en async para reusar el orquestador
-    procesarTodo();
-  } else {
-    actualizarBotonProcesar();
-  }
+  if (!modoDUA) { procesarTodo(); } else { actualizarBotonProcesar(); }
 }
 
-// Manejador del DUA
 function manejarDUA(file) {
-  if (!file.name.toLowerCase().endsWith('.pdf')) {
-    alert('Solo se aceptan archivos PDF'); return;
-  }
+  if (!file.name.toLowerCase().endsWith('.pdf')) { alert('Solo se aceptan archivos PDF'); return; }
   duaFile = file;
   const zone = document.getElementById('drop-zone-dua');
   zone.classList.add('has-file');
