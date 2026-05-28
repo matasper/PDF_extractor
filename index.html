@@ -334,6 +334,33 @@
   }
   .table-wrap.visible { display: block; }
   .table-scroll { overflow-x: auto; }
+  .table-scroll.collapsed { display: none; }
+
+  /* Header arriba de la tabla con título + botón minimizar */
+  .table-wrap-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.6rem 1rem;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+  }
+  .table-wrap-header.collapsed { border-bottom: none; }
+  .table-wrap-title {
+    font-family: var(--mono); font-size: 0.8rem;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .btn-toggle-tabla {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 0.3rem 0.8rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: var(--mono); font-size: 0.75rem;
+    transition: all 0.15s;
+  }
+  .btn-toggle-tabla:hover {
+    color: var(--text); border-color: var(--muted);
+  }
   table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
   thead {
     background: var(--surface2);
@@ -694,7 +721,11 @@
   </div>
 
   <div class="table-wrap fade-up" id="table-wrap">
-    <div class="table-scroll">
+    <div class="table-wrap-header" id="table-wrap-header">
+      <span class="table-wrap-title">Items detectados</span>
+      <button class="btn-toggle-tabla" id="btn-toggle-tabla" onclick="toggleTabla()">▼ Minimizar</button>
+    </div>
+    <div class="table-scroll" id="table-scroll">
       <table>
         <thead>
           <tr id="tabla-head">
@@ -737,7 +768,7 @@
            placeholder="Escribí la frase aquí" autocomplete="off" spellcheck="false">
     <p style="margin-bottom:0.4rem">Tu nombre <span class="modal-confirm-hint">(opcional, para auditoría)</span></p>
     <input type="text" class="modal-confirm-input" id="nombre-auditoria"
-           placeholder="Ej: Juan" autocomplete="off" maxlength="100">
+           placeholder="Ej: Germán" autocomplete="off" maxlength="100">
     <div class="modal-confirm-hint" id="modal-mensaje"></div>
     <div class="modal-buttons">
       <button class="modal-btn modal-btn-no" onclick="cerrarModalConfirmar()">Cancelar</button>
@@ -1520,6 +1551,20 @@ function mostrarToolbar(n) {
   toolbar.classList.add('visible');
   tableWrap.classList.add('visible');
   document.getElementById('btn-ocr').style.display = ocrTextosPorPagina.length ? '' : 'none';
+  // Asegurar que la tabla arranca expandida cuando aparece
+  document.getElementById('table-scroll').classList.remove('collapsed');
+  document.getElementById('table-wrap-header').classList.remove('collapsed');
+  document.getElementById('btn-toggle-tabla').textContent = '▼ Minimizar';
+}
+
+// Alterna el estado expandido/colapsado de la tabla de items
+function toggleTabla() {
+  const scroll = document.getElementById('table-scroll');
+  const header = document.getElementById('table-wrap-header');
+  const btn    = document.getElementById('btn-toggle-tabla');
+  const collapsed = scroll.classList.toggle('collapsed');
+  header.classList.toggle('collapsed', collapsed);
+  btn.textContent = collapsed ? '▶ Mostrar tabla' : '▼ Minimizar';
 }
 
 // Resetea SOLO datos derivados, sin tocar la selección de archivos
@@ -2807,7 +2852,7 @@ async function exportarCSV() {
   }
 }
 
-// ── Drag & Drop ──────────────────────────────────────
+// ── Drag & Drop ──────────────
 function registrarDropZone(zoneId, inputId, onFile) {
   const zone = document.getElementById(zoneId);
   const input = document.getElementById(inputId);
