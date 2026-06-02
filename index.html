@@ -1348,6 +1348,24 @@ async function procesarDUA(file) {
   log(`  Páginas: ${pdf.numPages}`, 'dim');
   const texto = await extraerTextoDUA(pdf);
   tributosDUA = parsearTributosDUA(texto);
+  // Diagnóstico: ver qué contiene tributosDUA para la posición 1
+const tribKeys = Object.keys(tributosDUA);
+log(`🔍 Total claves en tributosDUA: ${tribKeys.length}`, 'step');
+const clavePos1Trib = tribKeys.find(k => k.startsWith('1|'));
+if (clavePos1Trib) {
+    log(`🔍 Clave encontrada para posición 1: "${clavePos1Trib}" → valor: ${JSON.stringify(tributosDUA[clavePos1Trib])}`, 'step');
+} else {
+    log(`❌ No se encontró ninguna clave que empiece con "1|"`, 'err');
+}
+
+// Mostrar el texto del DUA alrededor del marcador del Item 1
+const idxItem1 = texto.search(/\(Item\s+1\s+Factura\s+\d+\)/i);
+if (idxItem1 !== -1) {
+    const fragmento = texto.slice(Math.max(0, idxItem1 - 50), idxItem1 + 300);
+    log(`📄 Fragmento del DUA alrededor del Item 1:\n${fragmento}`, 'dim');
+} else {
+    log(`❌ No se encontró "(Item 1 Factura ...)" en el texto extraído`, 'err');
+}
  log(`  Claves generadas en DUA: ${Object.keys(tributosDUA).join(', ')}`, 'step');
 log(`  Primeros 500 caracteres del texto extraído del DUA:`, 'dim');
 log(texto.slice(0, 500).replace(/\n/g, '↵'), 'dim');
