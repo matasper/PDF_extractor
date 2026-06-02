@@ -1294,10 +1294,10 @@ async function extraerTextoDUA(pdf) {
 
 // Regex de los 4 tributos. Buscan: código + nombre + BImp + alícuota (X,XX)
 // Tolerantes a espacios variables y mayúsculas/minúsculas.
-const RE_TRIB_IMADUNI = /\b04\s+IMADUNI\s+\d+\s+(\d+[.,]\d+)/i;
-const RE_TRIB_REC_MIN = /\b02\s+RECARGO\s+M[IÍ]NIMO\s+\d+\s+(\d+[.,]\d+)/i;
-const RE_TRIB_REC_ADI = /\b03\s+RECARGO\s+ADICIONAL\s+\d+\s+(\d+[.,]\d+)/i;
-const RE_TRIB_TASA    = /\b26\s+TASA\s+CONSULAR\s+\d+\s+(\d+[.,]\d+)/i;
+const RE_TRIB_IMADUNI = /\b04\s*IMADUNI\s*\d+\s*(\d+[.,]\d+)/i;
+const RE_TRIB_REC_MIN = /\b02\s*RECARGO\s*M[ÍI]NIMO\s*\d+\s*(\d+[.,]\d+)/i;
+const RE_TRIB_REC_ADI = /\b03\s*RECARGO\s*ADICIONAL\s*\d+\s*(\d+[.,]\d+)/i;
+const RE_TRIB_TASA    = /\b26\s*TASA\s*CONSULAR\s*\d+\s*(\d+[.,]\d+)/i;
 
 // Convierte "6,20" → 6.20
 function parseAlicuota(s) {
