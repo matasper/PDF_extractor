@@ -795,12 +795,13 @@
             <th>Material</th>
             <th>Tasa</th><th>Rec.Mín</th><th>IMADUNI</th><th>Rec.Adic</th>
             <th>Última factura</th><th>Pos. DUA</th>
+            <th>Fecha DUA</th><th>Nº DUA</th>
             <th>Actualizado</th><th>Por</th>
             <th></th>
           </tr>
         </thead>
         <tbody id="db-tbody">
-          <tr><td colspan="10" class="history-empty">Cargando…</td></tr>
+          <tr><td colspan="12" class="history-empty">Cargando…</td></tr>
         </tbody>
       </table>
     </div>
@@ -866,6 +867,10 @@ let invoiceFile = null;
 let duaFile = null;
 // Mapa de tributos extraídos del DUA: clave "item|factura" → { imaduni, recMin, recAdi, tasaCon }
 let tributosDUA = {};
+// 🔥 Cabecera del DUA actual (trazabilidad + control de "DUA más reciente")
+let fechaDUA    = '';  // dd/mm/yyyy tal como figura en el DUA
+let fechaDUAISO = '';  // yyyy-mm-dd, para comparar cronológicamente como string
+let nroDUA      = '';  // ej. 002-2026-090069
 
 // ⚙️ Mapeo de tributos a columnas del Excel. Las etiquetas del template son
 // "26", "2", "4", "3" — los CÓDIGOS de cada tributo. Por eso:
@@ -1306,6 +1311,21 @@ function parseAlicuota(s) {
   return isFinite(n) ? n : 0;
 }
 
+// 🔥 Cabecera del DUA. "Fecha Registro" es la fecha oficial de numeración del DUA,
+// la que define la cronología (cuál DUA es más reciente). "Nº DUA" es el identificador.
+const RE_FECHA_REGISTRO = /Fecha\s+Registro\s+(\d{2})\/(\d{2})\/(\d{4})/i;
+const RE_NRO_DUA        = /N[ºo°ª]?\s*DUA\s+(\d{3}-\d{4}-\d+)/i;
+
+// Lee fecha de registro + Nº del texto completo del DUA. Devuelve { fecha, fechaISO, nro }.
+function parsearCabeceraDUA(texto) {
+  const mF = texto.match(RE_FECHA_REGISTRO);
+  const mN = texto.match(RE_NRO_DUA);
+  const fecha    = mF ? `${mF[1]}/${mF[2]}/${mF[3]}` : '';
+  const fechaISO = mF ? `${mF[3]}-${mF[2]}-${mF[1]}` : '';  // yyyy-mm-dd (ordenable)
+  const nro      = mN ? mN[1] : '';
+  return { fecha, fechaISO, nro };
+}
+
 // Procesa el texto completo del DUA y devuelve { "item|factura": {imaduni, recMin, recAdi, tasaCon} }
 function parsearTributosDUA(texto) {
   const tributos = {};
@@ -1317,19 +1337,19 @@ function parsearTributosDUA(texto) {
     marcadores.push({ pos: m.index, item: m[1], factura: m[2] });
   }
   if (marcadores.length === 0) return tributos;
- 
+
   // 1) Para cada marcador, calcular los tributos de su bloque propio
   //    (desde el marcador hasta el siguiente, o hasta fin de texto).
   for (let i = 0; i < marcadores.length; i++) {
     const { pos } = marcadores[i];
     const fin = (i + 1 < marcadores.length) ? marcadores[i + 1].pos : texto.length;
     const bloque = texto.slice(pos, fin);
- 
+
     const grab = (re) => {
       const match = bloque.match(re);
       return match ? parseAlicuota(match[1]) : 0;
     };
- 
+
     marcadores[i].trib = {
       imaduni: grab(RE_TRIB_IMADUNI),
       recMin:  grab(RE_TRIB_REC_MIN),
@@ -1337,8 +1357,8 @@ function parsearTributosDUA(texto) {
       tasaCon: grab(RE_TRIB_TASA)
     };
   }
- 
-  // 2)  Backfill de tabla compartida:
+
+  // 2) 🔥 Backfill de tabla compartida:
   //    Cuando varios "(Item N Factura M)" pertenecen a la misma línea de "Mercadería"
   //    y comparten UNA sola tabla de Tributos, esa tabla aparece DESPUÉS del último
   //    marcador del grupo, por lo que los marcadores anteriores quedan en cero.
@@ -1354,7 +1374,7 @@ function parsearTributosDUA(texto) {
       }
     }
   }
- 
+
   // 3) Volcar al mapa por clave "item|factura"
   for (const mk of marcadores) {
     tributos[`${mk.item}|${mk.factura}`] = mk.trib;
@@ -1370,6 +1390,16 @@ async function procesarDUA(file) {
   log(`  Páginas: ${pdf.numPages}`, 'dim');
   const texto = await extraerTextoDUA(pdf);
   tributosDUA = parsearTributosDUA(texto);
+
+  // 🔥 Cabecera: fecha de registro + Nº DUA (para control de "más reciente")
+  const cab = parsearCabeceraDUA(texto);
+  fechaDUA = cab.fecha; fechaDUAISO = cab.fechaISO; nroDUA = cab.nro;
+  if (fechaDUA) {
+    log(`  DUA ${nroDUA || '(s/nº)'} — Fecha registro: ${fechaDUA}`, 'ok');
+  } else {
+    log('  ⚠ No se pudo leer la "Fecha Registro" del DUA — el control de DUA más reciente quedará deshabilitado', 'warn');
+  }
+
   const claves = Object.keys(tributosDUA);
   log(`  ${claves.length} ítem(s) con tributos extraídos del DUA`, 'ok');
 
@@ -1611,6 +1641,7 @@ function resetUI() {
   invoiceFile = null;
   duaFile = null;
   tributosDUA = {};
+  fechaDUA = ''; fechaDUAISO = ''; nroDUA = '';
   document.getElementById('invoice-filename').textContent = '';
   document.getElementById('dua-filename').textContent = '';
   document.getElementById('drop-zone').classList.remove('has-file');
@@ -2480,15 +2511,24 @@ function compararConGuardados(items, guardados) {
     // que "este material lo vimos con 0 tributos" y detectar si cambia más adelante.
     const saved = guardadosMap.get(it.material);
     if (!saved) {
-      nuevos.push({ item: it, current: t, saved: null });
+      nuevos.push({ item: it, current: t, saved: null, duaMasViejo: false, fechaGuardada: '', nroGuardado: '' });
       continue;
     }
+    // 🔥 Control de cronología: ¿el DUA que estoy procesando es MÁS VIEJO que el que
+    // fijó los tributos guardados? (clave para "carpetas atrasadas"). Comparamos las
+    // fechas ISO como string (yyyy-mm-dd ordena cronológicamente).
+    const fechaGuardada = saved.fecha_dua || '';
+    const duaMasViejo = !!(fechaDUAISO && fechaGuardada && fechaDUAISO < fechaGuardada);
+
     const sameAll =
       Math.abs((saved.imaduni  || 0) - t.imaduni)  < TOL &&
       Math.abs((saved.rec_min  || 0) - t.recMin)   < TOL &&
       Math.abs((saved.rec_adi  || 0) - t.recAdi)   < TOL &&
       Math.abs((saved.tasa_con || 0) - t.tasaCon)  < TOL;
-    (sameAll ? iguales : cambiados).push({ item: it, current: t, saved });
+    (sameAll ? iguales : cambiados).push({
+      item: it, current: t, saved,
+      duaMasViejo, fechaGuardada, nroGuardado: saved.nro_dua || ''
+    });
   }
 
   return { nuevos, cambiados, iguales };
@@ -2510,12 +2550,19 @@ function renderDiffSection(tipo, entries) {
   const rows = entries.map((e, i) => {
     const id = `chk-${tipo}-${i}`;
     const mat = e.item.material;
+    const itemId = e.item.item || '—';                    // 🔥 nº de item (ej. 0010) para ubicarlo en la lista impresa
+    const factura = e.item.factura || '';
     const desc = (e.item.description || '').slice(0, 40);
     const cur = e.current;
     const sav = e.saved;
 
-    const checked = tipo === 'iguales' ? '' : 'checked';
+    // 🔥 Si el DUA actual es más viejo que el guardado, destildamos la casilla para
+    // no sobrescribir datos más recientes, y mostramos un aviso.
+    const checked = (tipo === 'iguales' || e.duaMasViejo) ? '' : 'checked';
     const disabled = tipo === 'iguales' ? 'disabled' : '';
+    const avisoViejo = e.duaMasViejo
+      ? `<div style="color:#c0392b;font-size:11px;margin-top:2px">⚠ Hay un DUA más reciente en la base (${e.fechaGuardada}${e.nroGuardado ? ' · ' + e.nroGuardado : ''}). Destildado para no sobrescribir.</div>`
+      : '';
 
     let cellsTrib;
     if (tipo === 'nuevos') {
@@ -2545,8 +2592,9 @@ function renderDiffSection(tipo, entries) {
     return `
       <tr>
         <td><input type="checkbox" id="${id}" data-tipo="${tipo}" data-idx="${i}" ${checked} ${disabled} onchange="actualizarContadorUpdate()"></td>
+        <td class="td-item"><strong>${itemId}</strong>${factura ? `<br><span style="font-size:10px;opacity:.6">fac ${factura}</span>` : ''}</td>
         <td class="mat">${mat}</td>
-        <td>${desc}</td>
+        <td>${desc}${avisoViejo}</td>
         ${cellsTrib}
       </tr>
     `;
@@ -2559,7 +2607,7 @@ function renderDiffSection(tipo, entries) {
         <summary>${titulo}</summary>
         <table class="diff-table">
           <thead><tr>
-            <th></th><th>Material</th><th>Descripción</th>
+            <th></th><th>Item</th><th>Material</th><th>Descripción</th>
             <th>Tasa</th><th>Rec.Mín</th><th>IMADUNI</th><th>Rec.Adic</th>
           </tr></thead>
           <tbody>${rows}</tbody>
@@ -2573,7 +2621,7 @@ function renderDiffSection(tipo, entries) {
       <h4 class="${tipo}">${titulo}</h4>
       <table class="diff-table">
         <thead><tr>
-          <th></th><th>Material</th><th>Descripción</th>
+          <th></th><th>Item</th><th>Material</th><th>Descripción</th>
           <th>Tasa</th><th>Rec.Mín</th><th>IMADUNI</th><th>Rec.Adic</th>
         </tr></thead>
         <tbody>${rows}</tbody>
@@ -2635,7 +2683,9 @@ function obtenerSeleccionados() {
           tasa_con:       t.tasaCon,
           ultima_factura: e.item.factura || null,
           ultima_pos_dua: e.item.posicion || null,
-          ultimo_dua:     extraerNroFactura(nombreArchivo) || null
+          ultimo_dua:     extraerNroFactura(nombreArchivo) || null,
+          fecha_dua:      fechaDUAISO || null,   // 🔥 fecha registro del DUA (yyyy-mm-dd)
+          nro_dua:        nroDUA || null         // 🔥 Nº DUA (ej. 002-2026-090069)
         });
       }
     }
@@ -2730,7 +2780,7 @@ function cerrarVisorDB() {
 
 async function cargarPaginaDB() {
   const tbody = document.getElementById('db-tbody');
-  tbody.innerHTML = '<tr><td colspan="10" class="history-empty">Cargando…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="12" class="history-empty">Cargando…</td></tr>';
   try {
     const params = new URLSearchParams({ all: '1', page: dbState.page, size: DB_PAGE_SIZE });
     if (dbState.search) params.set('search', dbState.search);
@@ -2742,14 +2792,14 @@ async function cargarPaginaDB() {
     dbState.totalPages = data.totalPages || 1;
     renderTablaDB();
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="10" class="history-empty">❌ Error: ${e.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="12" class="history-empty">❌ Error: ${e.message}</td></tr>`;
   }
 }
 
 function renderTablaDB() {
   const tbody = document.getElementById('db-tbody');
   if (dbState.rows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="10" class="history-empty">No hay registros${dbState.search ? ' para "' + dbState.search + '"' : ''}.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="12" class="history-empty">No hay registros${dbState.search ? ' para "' + dbState.search + '"' : ''}.</td></tr>`;
   } else {
     const escapeHtml = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
     tbody.innerHTML = dbState.rows.map(r => `
@@ -2761,6 +2811,8 @@ function renderTablaDB() {
         <td class="val">${fmtTrib(r.rec_adi)}</td>
         <td>${escapeHtml(r.ultima_factura)}</td>
         <td class="val">${r.ultima_pos_dua ?? '—'}</td>
+        <td class="date">${r.fecha_dua ? escapeHtml(r.fecha_dua.split('-').reverse().join('/')) : '—'}</td>
+        <td>${escapeHtml(r.nro_dua || '—')}</td>
         <td class="date">${fmtFecha(r.updated_at)}</td>
         <td>${escapeHtml(r.updated_by || '—')}</td>
         <td><button class="db-row-btn" onclick="verHistorial('${escapeHtml(r.material)}')">Historial</button></td>
