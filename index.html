@@ -1294,10 +1294,10 @@ async function extraerTextoDUA(pdf) {
 
 // Regex de los 4 tributos. Buscan: código + nombre + BImp + alícuota (X,XX)
 // Tolerantes a espacios variables y mayúsculas/minúsculas.
-const RE_TRIB_IMADUNI = /\b04\s*IMADUNI\s*\d+\s*(\d+[.,]\d+)/i;
-const RE_TRIB_REC_MIN = /\b02\s*RECARGO\s*M[ÍI]NIMO\s*\d+\s*(\d+[.,]\d+)/i;
-const RE_TRIB_REC_ADI = /\b03\s*RECARGO\s*ADICIONAL\s*\d+\s*(\d+[.,]\d+)/i;
-const RE_TRIB_TASA    = /\b26\s*TASA\s*CONSULAR\s*\d+\s*(\d+[.,]\d+)/i;
+const RE_TRIB_IMADUNI = /\b04\s+IMADUNI\s+\d+\s+(\d+[.,]\d+)/i;
+const RE_TRIB_REC_MIN = /\b02\s+RECARGO\s+M[IÍ]NIMO\s+\d+\s+(\d+[.,]\d+)/i;
+const RE_TRIB_REC_ADI = /\b03\s+RECARGO\s+ADICIONAL\s+\d+\s+(\d+[.,]\d+)/i;
+const RE_TRIB_TASA    = /\b26\s+TASA\s+CONSULAR\s+\d+\s+(\d+[.,]\d+)/i;
 
 // Convierte "6,20" → 6.20
 function parseAlicuota(s) {
@@ -1309,41 +1309,55 @@ function parseAlicuota(s) {
 // Procesa el texto completo del DUA y devuelve { "item|factura": {imaduni, recMin, recAdi, tasaCon} }
 function parsearTributosDUA(texto) {
   const tributos = {};
-  // Marcadores: (Item X Factura Y)
-  const RE_MARCADOR = /\(Item\s+(\d+)\s+Factura\s+(\d+)\)/gi;
+  // Encontrar todos los marcadores "(Item N Factura N)"
+  const RE_MARCADOR = /\(Item\s+(\d+)\s+Factura\s+(\d+)\)/g;
   const marcadores = [];
   let m;
   while ((m = RE_MARCADOR.exec(texto)) !== null) {
     marcadores.push({ pos: m.index, item: m[1], factura: m[2] });
   }
   if (marcadores.length === 0) return tributos;
-
+ 
+  // 1) Para cada marcador, calcular los tributos de su bloque propio
+  //    (desde el marcador hasta el siguiente, o hasta fin de texto).
   for (let i = 0; i < marcadores.length; i++) {
-    const { item, factura, pos } = marcadores[i];
+    const { pos } = marcadores[i];
     const fin = (i + 1 < marcadores.length) ? marcadores[i + 1].pos : texto.length;
-    let bloque = texto.slice(pos, fin);
-    
-    // Normalizar: reemplazar saltos de línea y múltiples espacios por un solo espacio
-    bloque = bloque.replace(/\s+/g, ' ');
-    
-    // Buscar los tributos con regex que permitan cualquier cosa entre medias
-    const getVal = (regex) => {
-      const match = bloque.match(regex);
+    const bloque = texto.slice(pos, fin);
+ 
+    const grab = (re) => {
+      const match = bloque.match(re);
       return match ? parseAlicuota(match[1]) : 0;
     };
-    
-    // Orden de búsqueda: probar primero con espacios flexibles, luego con comas o puntos
-    const imaduni = getVal(/04\s+IMADUNI\s+\d+\s+(\d+[.,]\d+)/i) ||
-                    getVal(/04\s+IMADUNI[^0-9]*(\d+[.,]\d+)/i);
-    const recMin  = getVal(/02\s+RECARGO\s+M[ÍI]NIMO\s+\d+\s+(\d+[.,]\d+)/i) ||
-                    getVal(/02\s+RECARGO\s+M[ÍI]NIMO[^0-9]*(\d+[.,]\d+)/i);
-    const recAdi  = getVal(/03\s+RECARGO\s+ADICIONAL\s+\d+\s+(\d+[.,]\d+)/i) ||
-                    getVal(/03\s+RECARGO\s+ADICIONAL[^0-9]*(\d+[.,]\d+)/i);
-    const tasaCon = getVal(/26\s+TASA\s+CONSULAR\s+\d+\s+(\d+[.,]\d+)/i) ||
-                    getVal(/26\s+TASA\s+CONSULAR[^0-9]*(\d+[.,]\d+)/i);
-    
-    const clave = `${item}|${factura}`;
-    tributos[clave] = { imaduni, recMin, recAdi, tasaCon };
+ 
+    marcadores[i].trib = {
+      imaduni: grab(RE_TRIB_IMADUNI),
+      recMin:  grab(RE_TRIB_REC_MIN),
+      recAdi:  grab(RE_TRIB_REC_ADI),
+      tasaCon: grab(RE_TRIB_TASA)
+    };
+  }
+ 
+  // 2)  Backfill de tabla compartida:
+  //    Cuando varios "(Item N Factura M)" pertenecen a la misma línea de "Mercadería"
+  //    y comparten UNA sola tabla de Tributos, esa tabla aparece DESPUÉS del último
+  //    marcador del grupo, por lo que los marcadores anteriores quedan en cero.
+  //    Esos marcadores heredan los tributos del siguiente marcador de la MISMA
+  //    factura que sí tenga valores.
+  const tieneValores = (t) => t.imaduni || t.recMin || t.recAdi || t.tasaCon;
+  for (let i = marcadores.length - 1; i >= 0; i--) {
+    if (tieneValores(marcadores[i].trib)) continue;
+    for (let j = i + 1; j < marcadores.length; j++) {
+      if (marcadores[j].factura === marcadores[i].factura && tieneValores(marcadores[j].trib)) {
+        marcadores[i].trib = { ...marcadores[j].trib };
+        break;
+      }
+    }
+  }
+ 
+  // 3) Volcar al mapa por clave "item|factura"
+  for (const mk of marcadores) {
+    tributos[`${mk.item}|${mk.factura}`] = mk.trib;
   }
   return tributos;
 }
@@ -1356,34 +1370,6 @@ async function procesarDUA(file) {
   log(`  Páginas: ${pdf.numPages}`, 'dim');
   const texto = await extraerTextoDUA(pdf);
   tributosDUA = parsearTributosDUA(texto);
-  // Diagnóstico: ver qué contiene tributosDUA para la posición 1
-const tribKeys = Object.keys(tributosDUA);
-log(` Total claves en tributosDUA: ${tribKeys.length}`, 'step');
-const clavePos1Trib = tribKeys.find(k => k.startsWith('1'));
-if (clavePos1Trib) {
-    log(` Clave encontrada para posición 1: "${clavePos1Trib}" → valor: ${JSON.stringify(tributosDUA[clavePos1Trib])}`, 'step');
-} else {
-    log(` No se encontró ninguna clave que empiece con "1"`, 'err');
-}
-
-// Nuevo diagnóstico específico
-if (tributosDUA["1|2738061267"]) {
-  log(`Valor para clave exacta "1|2738061267": IMADUNI=${tributosDUA["1|2738061267"].imaduni}, RecMin=${tributosDUA["1|2738061267"].recMin}, etc.`, 'step');
-} else {
-  log(`❌ Clave "1|2738061267" no encontrada`, 'err');
-}
-
-// Mostrar el texto del DUA alrededor del marcador del Item 1
-const idxItem1 = texto.search(/\(Item\s+1\s+Factura\s+\d+\)/i);
-if (idxItem1 !== -1) {
-    const fragmento = texto.slice(Math.max(0, idxItem1 - 50), idxItem1 + 300);
-    log(`📄 Fragmento del DUA alrededor del Item 1:\n${fragmento}`, 'dim');
-} else {
-    log(`❌ No se encontró "(Item 1 Factura ...)" en el texto extraído`, 'err');
-}
- log(`  Claves generadas en DUA: ${Object.keys(tributosDUA).join(', ')}`, 'step');
-log(`  Primeros 500 caracteres del texto extraído del DUA:`, 'dim');
-log(texto.slice(0, 500).replace(/\n/g, '↵'), 'dim');
   const claves = Object.keys(tributosDUA);
   log(`  ${claves.length} ítem(s) con tributos extraídos del DUA`, 'ok');
 
@@ -1497,42 +1483,19 @@ async function procesarTodo() {
       await procesarDUA(duaFile);
     }
     await procesarArchivoInvoice(invoiceFile);
-   
-log(`🔍 Claves en tributosDUA: ${Object.keys(tributosDUA).join(', ')}`, 'step');
+
     // 🔥 NUEVO: cruce por (posición|factura).
     // Cada item del invoice ya viene con su factura detectada y su posición 1-based.
     // El DUA contiene las claves "posicion|factura" porque su "Item N" es la N-ésima posición.
-   let cruzados = 0;
-   const facturasInvoice = new Set();
-
-   // --- Construir mapa de posición -> tributos (ignorando factura) ---
-  const tributosPorPosicion = {};
-  for (const [clave, val] of Object.entries(tributosDUA)) {
-    const pos = parseInt(clave.split('|')[0], 10);
-    if (!isNaN(pos) && !tributosPorPosicion[pos]) {
-        tributosPorPosicion[pos] = val;
-    }
-}
-// -------------------------------------------------------------
-
+    let cruzados = 0;
+    const facturasInvoice = new Set();
     for (const it of itemsGlobal) {
-    // Intento 1: con factura exacta
-    let trib = buscarTributosPorPosicion(it.posicion, it.factura);
-
-    // Intento 2: fallback por posición global (solo si el primer intento dio todos ceros)
-    const tieneTributos = trib.imaduni || trib.recMin || trib.recAdi || trib.tasaCon;
-    if (!tieneTributos && tributosPorPosicion[it.posicion]) {
-        trib = tributosPorPosicion[it.posicion];
-        log(`  ↳ Fallback: Item ${it.item} (pos ${it.posicion}) emparejado por posición`, 'warn');
-    }
-
-    it.tributos = trib;
-
-    if (it.factura) facturasInvoice.add(it.factura);
-    if (it.tributos.imaduni || it.tributos.recMin || it.tributos.recAdi || it.tributos.tasaCon) {
+      it.tributos = buscarTributosPorPosicion(it.posicion, it.factura);
+      if (it.factura) facturasInvoice.add(it.factura);
+      if (it.tributos.imaduni || it.tributos.recMin || it.tributos.recAdi || it.tributos.tasaCon) {
         cruzados++;
+      }
     }
-}
 
     // 🔥 Una vez asignadas posición + factura + tributos como propiedades de cada item,
     // podemos ordenar libremente para presentación. Replicamos el orden histórico:
