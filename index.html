@@ -1372,12 +1372,19 @@ async function procesarDUA(file) {
   tributosDUA = parsearTributosDUA(texto);
   // Diagnóstico: ver qué contiene tributosDUA para la posición 1
 const tribKeys = Object.keys(tributosDUA);
-log(`🔍 Total claves en tributosDUA: ${tribKeys.length}`, 'step');
-const clavePos1Trib = tribKeys.find(k => k.startsWith('1|'));
+log(` Total claves en tributosDUA: ${tribKeys.length}`, 'step');
+const clavePos1Trib = tribKeys.find(k => k.startsWith('1'));
 if (clavePos1Trib) {
-    log(`🔍 Clave encontrada para posición 1: "${clavePos1Trib}" → valor: ${JSON.stringify(tributosDUA[clavePos1Trib])}`, 'step');
+    log(` Clave encontrada para posición 1: "${clavePos1Trib}" → valor: ${JSON.stringify(tributosDUA[clavePos1Trib])}`, 'step');
 } else {
-    log(`❌ No se encontró ninguna clave que empiece con "1|"`, 'err');
+    log(` No se encontró ninguna clave que empiece con "1"`, 'err');
+}
+
+// Nuevo diagnóstico específico
+if (tributosDUA["1|2738061267"]) {
+  log(`Valor para clave exacta "1|2738061267": IMADUNI=${tributosDUA["1|2738061267"].imaduni}, RecMin=${tributosDUA["1|2738061267"].recMin}, etc.`, 'step');
+} else {
+  log(`❌ Clave "1|2738061267" no encontrada`, 'err');
 }
 
 // Mostrar el texto del DUA alrededor del marcador del Item 1
