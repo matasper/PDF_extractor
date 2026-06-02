@@ -1464,19 +1464,42 @@ async function procesarTodo() {
       await procesarDUA(duaFile);
     }
     await procesarArchivoInvoice(invoiceFile);
-
+   
+log(`🔍 Claves en tributosDUA: ${Object.keys(tributosDUA).join(', ')}`, 'step');
     // 🔥 NUEVO: cruce por (posición|factura).
     // Cada item del invoice ya viene con su factura detectada y su posición 1-based.
     // El DUA contiene las claves "posicion|factura" porque su "Item N" es la N-ésima posición.
-    let cruzados = 0;
-    const facturasInvoice = new Set();
-    for (const it of itemsGlobal) {
-      it.tributos = buscarTributosPorPosicion(it.posicion, it.factura);
-      if (it.factura) facturasInvoice.add(it.factura);
-      if (it.tributos.imaduni || it.tributos.recMin || it.tributos.recAdi || it.tributos.tasaCon) {
-        cruzados++;
-      }
+   let cruzados = 0;
+   const facturasInvoice = new Set();
+
+   // --- Construir mapa de posición -> tributos (ignorando factura) ---
+  const tributosPorPosicion = {};
+  for (const [clave, val] of Object.entries(tributosDUA)) {
+    const pos = parseInt(clave.split('|')[0], 10);
+    if (!isNaN(pos) && !tributosPorPosicion[pos]) {
+        tributosPorPosicion[pos] = val;
     }
+}
+// -------------------------------------------------------------
+
+    for (const it of itemsGlobal) {
+    // Intento 1: con factura exacta
+    let trib = buscarTributosPorPosicion(it.posicion, it.factura);
+
+    // Intento 2: fallback por posición global (solo si el primer intento dio todos ceros)
+    const tieneTributos = trib.imaduni || trib.recMin || trib.recAdi || trib.tasaCon;
+    if (!tieneTributos && tributosPorPosicion[it.posicion]) {
+        trib = tributosPorPosicion[it.posicion];
+        log(`  ↳ Fallback: Item ${it.item} (pos ${it.posicion}) emparejado por posición`, 'warn');
+    }
+
+    it.tributos = trib;
+
+    if (it.factura) facturasInvoice.add(it.factura);
+    if (it.tributos.imaduni || it.tributos.recMin || it.tributos.recAdi || it.tributos.tasaCon) {
+        cruzados++;
+    }
+}
 
     // 🔥 Una vez asignadas posición + factura + tributos como propiedades de cada item,
     // podemos ordenar libremente para presentación. Replicamos el orden histórico:
