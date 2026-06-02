@@ -171,8 +171,8 @@ export async function onRequestPost({ request, env }) {
   }
 
   const stmtUpsert = env.DB.prepare(`
-    INSERT INTO tributos (material, imaduni, rec_min, rec_adi, tasa_con, ultima_factura, ultima_pos_dua, ultimo_dua, updated_at, updated_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tributos (material, imaduni, rec_min, rec_adi, tasa_con, ultima_factura, ultima_pos_dua, ultimo_dua, fecha_dua, nro_dua, updated_at, updated_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(material) DO UPDATE SET
       imaduni        = excluded.imaduni,
       rec_min        = excluded.rec_min,
@@ -181,13 +181,15 @@ export async function onRequestPost({ request, env }) {
       ultima_factura = excluded.ultima_factura,
       ultima_pos_dua = excluded.ultima_pos_dua,
       ultimo_dua     = excluded.ultimo_dua,
+      fecha_dua      = excluded.fecha_dua,
+      nro_dua        = excluded.nro_dua,
       updated_at     = excluded.updated_at,
       updated_by     = excluded.updated_by
   `);
 
   const stmtHistory = env.DB.prepare(`
-    INSERT INTO tributos_history (material, imaduni, rec_min, rec_adi, tasa_con, ultima_factura, ultima_pos_dua, changed_at, changed_by, action)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tributos_history (material, imaduni, rec_min, rec_adi, tasa_con, ultima_factura, ultima_pos_dua, fecha_dua, nro_dua, changed_at, changed_by, action)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const queries = [];
@@ -201,9 +203,11 @@ export async function onRequestPost({ request, env }) {
     const fac = u.ultima_factura || null;
     const pos = u.ultima_pos_dua != null ? Number(u.ultima_pos_dua) : null;
     const dua = u.ultimo_dua || null;
+    const fdua = u.fecha_dua || null;   // 🔥 fecha registro DUA (yyyy-mm-dd)
+    const ndua = u.nro_dua || null;     // 🔥 Nº DUA
 
-    queries.push(stmtUpsert.bind(u.material, im, rm, ra, tc, fac, pos, dua, now, by));
-    queries.push(stmtHistory.bind(u.material, im, rm, ra, tc, fac, pos, now, by, action));
+    queries.push(stmtUpsert.bind(u.material, im, rm, ra, tc, fac, pos, dua, fdua, ndua, now, by));
+    queries.push(stmtHistory.bind(u.material, im, rm, ra, tc, fac, pos, fdua, ndua, now, by, action));
   }
 
   try {
