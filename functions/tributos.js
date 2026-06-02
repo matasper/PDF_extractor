@@ -160,15 +160,27 @@ export async function onRequestPost({ request, env }) {
   if (matsArr.length === 0) return json(400, { error: 'Updates sin material code' });
 
   const BLOCK = 90;
-  const existingSet = new Set();
+  // 🔥 Traemos también la fecha_dua guardada para poder aplicar la "guardia dura":
+  // nunca pisar un material con un DUA más viejo que el que ya tiene.
+  const existingMap = new Map();   // material → { fecha_dua }
   for (let i = 0; i < matsArr.length; i += BLOCK) {
     const chunk = matsArr.slice(i, i + BLOCK);
     const placeholders = chunk.map(() => '?').join(',');
     const result = await env.DB.prepare(
-      `SELECT material FROM tributos WHERE material IN (${placeholders})`
+      `SELECT material, fecha_dua FROM tributos WHERE material IN (${placeholders})`
     ).bind(...chunk).all();
-    for (const r of (result.results || [])) existingSet.add(r.material);
+    for (const r of (result.results || [])) existingMap.set(r.material, { fecha_dua: r.fecha_dua });
   }
+
+  // ¿El DUA entrante es más nuevo o igual que el guardado? (fechas ISO 'YYYY-MM-DD HH:MM:SS',
+  // comparables como string). Reglas para datos incompletos:
+  //   · sin registro previo o sin fecha guardada → permitir (hay que setear la fecha).
+  //   · DUA entrante sin fecha pero el guardado sí tiene → NO pisar (no se puede probar que es más nuevo).
+  const esMasNuevoOIgual = (entrante, guardada) => {
+    if (guardada == null || guardada === '') return true;
+    if (entrante == null || entrante === '') return false;
+    return entrante >= guardada;
+  };
 
   const stmtUpsert = env.DB.prepare(`
     INSERT INTO tributos (material, imaduni, rec_min, rec_adi, tasa_con, ultima_factura, ultima_pos_dua, ultimo_dua, fecha_dua, nro_dua, updated_at, updated_by)
@@ -193,9 +205,20 @@ export async function onRequestPost({ request, env }) {
   `);
 
   const queries = [];
+  const omitidos = [];   // materiales no aplicados por tener un DUA más reciente en la base
   for (const u of updates) {
     if (!u.material) continue;
-    const action = existingSet.has(u.material) ? 'update' : 'create';
+    const prev = existingMap.get(u.material);          // { fecha_dua } o undefined
+    const action = prev ? 'update' : 'create';
+    const fdua = u.fecha_dua || null;   // 🔥 fecha+hora registro DUA ('YYYY-MM-DD HH:MM:SS')
+    const ndua = u.nro_dua || null;     // 🔥 Nº DUA
+
+    // 🔥 Guardia dura: si ya existe y el DUA entrante es más viejo, NO lo pisamos.
+    if (prev && !esMasNuevoOIgual(fdua, prev.fecha_dua)) {
+      omitidos.push({ material: u.material, fecha_guardada: prev.fecha_dua });
+      continue;
+    }
+
     const im = Number(u.imaduni)  || 0;
     const rm = Number(u.rec_min)  || 0;
     const ra = Number(u.rec_adi)  || 0;
@@ -203,16 +226,14 @@ export async function onRequestPost({ request, env }) {
     const fac = u.ultima_factura || null;
     const pos = u.ultima_pos_dua != null ? Number(u.ultima_pos_dua) : null;
     const dua = u.ultimo_dua || null;
-    const fdua = u.fecha_dua || null;   // 🔥 fecha registro DUA (yyyy-mm-dd)
-    const ndua = u.nro_dua || null;     // 🔥 Nº DUA
 
     queries.push(stmtUpsert.bind(u.material, im, rm, ra, tc, fac, pos, dua, fdua, ndua, now, by));
     queries.push(stmtHistory.bind(u.material, im, rm, ra, tc, fac, pos, fdua, ndua, now, by, action));
   }
 
   try {
-    await env.DB.batch(queries);
-    return json(200, { ok: true, count: updates.length });
+    if (queries.length) await env.DB.batch(queries);
+    return json(200, { ok: true, count: omitidos.length ? (updates.length - omitidos.length) : updates.length, omitidos });
   } catch (e) {
     return json(500, { error: 'Error guardando en la D1: ' + e.message });
   }
