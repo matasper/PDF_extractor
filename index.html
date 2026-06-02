@@ -1311,18 +1311,26 @@ function parseAlicuota(s) {
   return isFinite(n) ? n : 0;
 }
 
-// 🔥 Cabecera del DUA. "Fecha Registro" es la fecha oficial de numeración del DUA,
-// la que define la cronología (cuál DUA es más reciente). "Nº DUA" es el identificador.
-const RE_FECHA_REGISTRO = /Fecha\s+Registro\s+(\d{2})\/(\d{2})\/(\d{4})/i;
+// 🔥 Cabecera del DUA. "Fecha Registro" es la fecha+hora oficial de numeración del DUA,
+// la que define la cronología (cuál DUA es más reciente). Incluimos la HORA para desempatar
+// dos DUAs del mismo día. "Nº DUA" es el identificador.
+const RE_FECHA_REGISTRO = /Fecha\s+Registro\s+(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}):(\d{2}))?/i;
 const RE_NRO_DUA        = /N[ºo°ª]?\s*DUA\s+(\d{3}-\d{4}-\d+)/i;
 
-// Lee fecha de registro + Nº del texto completo del DUA. Devuelve { fecha, fechaISO, nro }.
+// Lee fecha+hora de registro + Nº del texto del DUA. Devuelve { fecha, fechaISO, nro }.
+//   fecha    → legible "dd/mm/yyyy HH:MM:SS" (para el log / UI)
+//   fechaISO → "yyyy-mm-dd HH:MM:SS" (ordenable como string = cronológico)
 function parsearCabeceraDUA(texto) {
   const mF = texto.match(RE_FECHA_REGISTRO);
   const mN = texto.match(RE_NRO_DUA);
-  const fecha    = mF ? `${mF[1]}/${mF[2]}/${mF[3]}` : '';
-  const fechaISO = mF ? `${mF[3]}-${mF[2]}-${mF[1]}` : '';  // yyyy-mm-dd (ordenable)
-  const nro      = mN ? mN[1] : '';
+  let fecha = '', fechaISO = '';
+  if (mF) {
+    const d = mF[1], m = mF[2], a = mF[3];
+    const hh = mF[4] || '00', mm = mF[5] || '00', ss = mF[6] || '00';
+    fecha    = mF[4] ? `${d}/${m}/${a} ${hh}:${mm}:${ss}` : `${d}/${m}/${a}`;
+    fechaISO = `${a}-${m}-${d} ${hh}:${mm}:${ss}`;
+  }
+  const nro = mN ? mN[1] : '';
   return { fecha, fechaISO, nro };
 }
 
@@ -2537,6 +2545,16 @@ function compararConGuardados(items, guardados) {
 // Formatea un número con 2 decimales o "—" si es 0
 const fmtTrib = (v) => (v > 0 || v < 0) ? Number(v).toFixed(2).replace('.', ',') : '—';
 
+// "2026-05-07 10:31:01" → "07/05/2026 10:31" (la hora se muestra recortada a HH:MM)
+function fmtFechaDUA(iso) {
+  if (!iso) return '—';
+  const [f, h] = String(iso).split(' ');
+  const p = f.split('-');
+  if (p.length !== 3) return iso;
+  const dmy = `${p[2]}/${p[1]}/${p[0]}`;
+  return h ? `${dmy} ${h.slice(0, 5)}` : dmy;
+}
+
 // Renderiza una sección de la tabla de diffs (nuevos | cambiados | iguales)
 function renderDiffSection(tipo, entries) {
   if (entries.length === 0) return '';
@@ -2561,7 +2579,7 @@ function renderDiffSection(tipo, entries) {
     const checked = (tipo === 'iguales' || e.duaMasViejo) ? '' : 'checked';
     const disabled = tipo === 'iguales' ? 'disabled' : '';
     const avisoViejo = e.duaMasViejo
-      ? `<div style="color:#c0392b;font-size:11px;margin-top:2px">⚠ Hay un DUA más reciente en la base (${e.fechaGuardada}${e.nroGuardado ? ' · ' + e.nroGuardado : ''}). Destildado para no sobrescribir.</div>`
+      ? `<div style="color:#c0392b;font-size:11px;margin-top:2px">⚠ Hay un DUA más reciente en la base (${fmtFechaDUA(e.fechaGuardada)}${e.nroGuardado ? ' · ' + e.nroGuardado : ''}). No se sobrescribirá.</div>`
       : '';
 
     let cellsTrib;
@@ -2734,6 +2752,10 @@ async function ejecutarUpdate() {
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`);
     log(`✅ ${data.count} tributo(s) actualizado(s) en la base${nombre ? ' por ' + nombre : ''}`, 'ok');
+    // 🔥 La base puede haber omitido materiales por tener un DUA más reciente (guardia dura)
+    if (data.omitidos && data.omitidos.length) {
+      log(`  ⚠ ${data.omitidos.length} no se sobrescribió(eron) por haber un DUA más reciente en la base: ${data.omitidos.map(o => o.material).join(', ')}`, 'warn');
+    }
     cerrarModalConfirmar();
     await ejecutarComparacionConNube();
   } catch (e) {
@@ -2811,7 +2833,7 @@ function renderTablaDB() {
         <td class="val">${fmtTrib(r.rec_adi)}</td>
         <td>${escapeHtml(r.ultima_factura)}</td>
         <td class="val">${r.ultima_pos_dua ?? '—'}</td>
-        <td class="date">${r.fecha_dua ? escapeHtml(r.fecha_dua.split('-').reverse().join('/')) : '—'}</td>
+        <td class="date">${escapeHtml(fmtFechaDUA(r.fecha_dua))}</td>
         <td>${escapeHtml(r.nro_dua || '—')}</td>
         <td class="date">${fmtFecha(r.updated_at)}</td>
         <td>${escapeHtml(r.updated_by || '—')}</td>
