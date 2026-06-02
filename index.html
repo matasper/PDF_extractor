@@ -1309,53 +1309,39 @@ function parseAlicuota(s) {
 // Procesa el texto completo del DUA y devuelve { "item|factura": {imaduni, recMin, recAdi, tasaCon} }
 function parsearTributosDUA(texto) {
   const tributos = {};
-  // Regex más permisivos: \s* permite cero o más espacios/saltos, y el número de B Imp es opcional
-  const RE_TRIB_IMADUNI = /\b04\s*IMADUNI\s*(?:\d+\s*)?(\d+[.,]\d+)/i;
-  const RE_TRIB_REC_MIN = /\b02\s*RECARGO\s*M[ÍI]NIMO\s*(?:\d+\s*)?(\d+[.,]\d+)/i;
-  const RE_TRIB_REC_ADI = /\b03\s*RECARGO\s*ADICIONAL\s*(?:\d+\s*)?(\d+[.,]\d+)/i;
-  const RE_TRIB_TASA    = /\b26\s*TASA\s*CONSULAR\s*(?:\d+\s*)?(\d+[.,]\d+)/i;
-
-  // Encontrar todos los marcadores (Item X Factura Y)
+  // Marcadores: (Item X Factura Y)
   const RE_MARCADOR = /\(Item\s+(\d+)\s+Factura\s+(\d+)\)/gi;
   const marcadores = [];
   let m;
   while ((m = RE_MARCADOR.exec(texto)) !== null) {
     marcadores.push({ pos: m.index, item: m[1], factura: m[2] });
   }
-
   if (marcadores.length === 0) return tributos;
 
   for (let i = 0; i < marcadores.length; i++) {
     const { item, factura, pos } = marcadores[i];
-    // Bloque desde este marcador hasta el siguiente (o hasta el final)
     const fin = (i + 1 < marcadores.length) ? marcadores[i + 1].pos : texto.length;
-    const bloque = texto.slice(pos, fin);
-
-    // Función auxiliar que busca en el bloque línea por línea
-    const extraerValor = (regex) => {
-      // Buscar en todo el bloque con el regex
+    let bloque = texto.slice(pos, fin);
+    
+    // Normalizar: reemplazar saltos de línea y múltiples espacios por un solo espacio
+    bloque = bloque.replace(/\s+/g, ' ');
+    
+    // Buscar los tributos con regex que permitan cualquier cosa entre medias
+    const getVal = (regex) => {
       const match = bloque.match(regex);
-      if (match && match[1]) return parseAlicuota(match[1]);
-      
-      // Fallback: buscar la línea que contenga el código (ej "04") y luego un número decimal
-      const codigo = regex.source.match(/\d+/)?.[0];
-      if (codigo) {
-        const lines = bloque.split(/\r?\n/);
-        for (const line of lines) {
-          if (line.includes(codigo)) {
-            const numMatch = line.match(/(\d+[.,]\d+)/);
-            if (numMatch) return parseAlicuota(numMatch[1]);
-          }
-        }
-      }
-      return 0;
+      return match ? parseAlicuota(match[1]) : 0;
     };
-
-    const imaduni = extraerValor(RE_TRIB_IMADUNI);
-    const recMin  = extraerValor(RE_TRIB_REC_MIN);
-    const recAdi  = extraerValor(RE_TRIB_REC_ADI);
-    const tasaCon = extraerValor(RE_TRIB_TASA);
-
+    
+    // Orden de búsqueda: probar primero con espacios flexibles, luego con comas o puntos
+    const imaduni = getVal(/04\s+IMADUNI\s+\d+\s+(\d+[.,]\d+)/i) ||
+                    getVal(/04\s+IMADUNI[^0-9]*(\d+[.,]\d+)/i);
+    const recMin  = getVal(/02\s+RECARGO\s+M[ÍI]NIMO\s+\d+\s+(\d+[.,]\d+)/i) ||
+                    getVal(/02\s+RECARGO\s+M[ÍI]NIMO[^0-9]*(\d+[.,]\d+)/i);
+    const recAdi  = getVal(/03\s+RECARGO\s+ADICIONAL\s+\d+\s+(\d+[.,]\d+)/i) ||
+                    getVal(/03\s+RECARGO\s+ADICIONAL[^0-9]*(\d+[.,]\d+)/i);
+    const tasaCon = getVal(/26\s+TASA\s+CONSULAR\s+\d+\s+(\d+[.,]\d+)/i) ||
+                    getVal(/26\s+TASA\s+CONSULAR[^0-9]*(\d+[.,]\d+)/i);
+    
     const clave = `${item}|${factura}`;
     tributos[clave] = { imaduni, recMin, recAdi, tasaCon };
   }
