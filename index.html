@@ -747,6 +747,7 @@
       <div class="diff-panel-title">Comparación con tributos guardados</div>
       <div class="diff-stats" id="diff-stats"></div>
     </div>
+    <div id="diff-dua-info" style="margin:4px 0 10px;font-size:13px;color:#9fb3c8"></div>
     <div id="diff-secciones"></div>
     <div class="diff-actions">
       <button class="btn-update-cloud" id="btn-update-cloud" disabled
@@ -2573,6 +2574,7 @@ function renderDiffSection(tipo, entries) {
     const desc = (e.item.description || '').slice(0, 40);
     const cur = e.current;
     const sav = e.saved;
+    const fechaEnBase = fmtFechaDUA(sav && sav.fecha_dua);   // 🔥 de qué DUA viene el dato ya guardado (— si es nuevo)
 
     // 🔥 Si el DUA actual es más viejo que el guardado, destildamos la casilla para
     // no sobrescribir datos más recientes, y mostramos un aviso.
@@ -2614,6 +2616,7 @@ function renderDiffSection(tipo, entries) {
         <td class="mat">${mat}</td>
         <td>${desc}${avisoViejo}</td>
         ${cellsTrib}
+        <td class="date">${fechaEnBase}</td>
       </tr>
     `;
   }).join('');
@@ -2627,6 +2630,7 @@ function renderDiffSection(tipo, entries) {
           <thead><tr>
             <th></th><th>Item</th><th>Material</th><th>Descripción</th>
             <th>Tasa</th><th>Rec.Mín</th><th>IMADUNI</th><th>Rec.Adic</th>
+            <th>Fecha en base</th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
@@ -2641,6 +2645,7 @@ function renderDiffSection(tipo, entries) {
         <thead><tr>
           <th></th><th>Item</th><th>Material</th><th>Descripción</th>
           <th>Tasa</th><th>Rec.Mín</th><th>IMADUNI</th><th>Rec.Adic</th>
+          <th>Fecha en base</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -2661,6 +2666,14 @@ function mostrarDiffPanel(diffs) {
     <span class="diff-stat cambiados"><strong>${diffs.cambiados.length}</strong>con cambios</span>
     <span class="diff-stat iguales"><strong>${diffs.iguales.length}</strong>iguales</span>
   `;
+
+  // 🔥 Cartel con el DUA que se está procesando y su fecha de registro
+  const duaInfoEl = document.getElementById('diff-dua-info');
+  if (duaInfoEl) {
+    duaInfoEl.innerHTML = fechaDUA
+      ? `📑 Procesando DUA <strong>${nroDUA || '(s/nº)'}</strong> · Fecha registro <strong>${fmtFechaDUA(fechaDUAISO)}</strong>. La columna "Fecha en base" muestra de qué DUA viene el dato ya guardado.`
+      : `⚠ No se pudo leer la fecha de registro de este DUA, así que no se puede comparar antigüedad con lo guardado.`;
+  }
 
   // Las tres secciones
   seccionesEl.innerHTML =
