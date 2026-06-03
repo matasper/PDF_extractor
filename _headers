@@ -1,0 +1,13 @@
+# Cloudflare Pages — control de caché
+#
+# El HTML es el punto de entrada de la app y trae todo el código embebido.
+# Lo marcamos como "siempre revalidar": el navegador puede guardar una copia,
+# pero antes de usarla le pregunta al servidor si cambió (responde 304 si no).
+# Así, después de cada deploy todos reciben la última versión sin tener que
+# hacer Ctrl+Shift+R a mano, y sin redescargas innecesarias.
+
+/
+  Cache-Control: no-cache, must-revalidate
+
+/index.html
+  Cache-Control: no-cache, must-revalidate
