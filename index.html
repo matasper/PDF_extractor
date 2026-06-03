@@ -748,6 +748,7 @@
       <div class="diff-stats" id="diff-stats"></div>
     </div>
     <div id="diff-dua-info" style="margin:4px 0 10px;font-size:13px;color:#9fb3c8"></div>
+    <div id="diff-mismatch" style="display:none;margin:8px 0 12px;padding:12px 14px;border-radius:8px;background:#3a1212;border:1px solid #c0392b;color:#ff9a8a;font-size:14px;font-weight:600"></div>
     <div id="diff-secciones"></div>
     <div class="diff-actions">
       <button class="btn-update-cloud" id="btn-update-cloud" disabled
@@ -872,6 +873,8 @@ let tributosDUA = {};
 let fechaDUA    = '';  // dd/mm/yyyy tal como figura en el DUA
 let fechaDUAISO = '';  // yyyy-mm-dd, para comparar cronológicamente como string
 let nroDUA      = '';  // ej. 002-2026-090069
+// 🔥 true cuando el DUA y el invoice NO comparten ninguna factura (probable archivo equivocado)
+let duaInvoiceSinCoincidencia = false;
 
 // ⚙️ Mapeo de tributos a columnas del Excel. Las etiquetas del template son
 // "26", "2", "4", "3" — los CÓDIGOS de cada tributo. Por eso:
@@ -1542,9 +1545,20 @@ async function procesarTodo() {
     // así que cuando un ID se repite en otra factura, ese duplicado aparece justo debajo.
     itemsGlobal.sort((a, b) => a.item.localeCompare(b.item));
 
+    // 🔥 SAFEGUARD: ¿el DUA y el invoice comparten alguna factura? Si NO comparten
+    // ninguna, casi seguro son de embarques distintos (archivo equivocado). Lo marcamos
+    // para bloquear la actualización y evitar pisar datos buenos con ceros.
+    const facturasDUA = new Set(Object.keys(tributosDUA).map(k => k.split('|')[1]));
+    const hayInterseccion = [...facturasInvoice].some(f => facturasDUA.has(f));
+    duaInvoiceSinCoincidencia = modoDUA && facturasDUA.size > 0 && facturasInvoice.size > 0 && !hayInterseccion;
+
     if (modoDUA) {
       log(`▸ Invoice: ${facturasInvoice.size} factura(s) detectada(s) → ${[...facturasInvoice].join(', ') || '(ninguna)'}`, 'dim');
+      log(`▸ DUA: ${facturasDUA.size} factura(s) referenciada(s) → ${[...facturasDUA].join(', ') || '(ninguna)'}`, 'dim');
       log(`▸ Cruce Invoice ↔ DUA: ${cruzados}/${itemsGlobal.length} ítem(s) con tributos asignados`, cruzados > 0 ? 'ok' : 'warn');
+      if (duaInvoiceSinCoincidencia) {
+        log(`🛑 El DUA y el invoice NO comparten ninguna factura. ¿Son del mismo embarque? La actualización quedará BLOQUEADA.`, 'err');
+      }
 
       // 🔥 Volcado diagnóstico: lista TODOS los items con su factura y posición detectadas.
       // Esto sirve para verificar manualmente que la detección de facturas y el conteo
@@ -1651,6 +1665,7 @@ function resetUI() {
   duaFile = null;
   tributosDUA = {};
   fechaDUA = ''; fechaDUAISO = ''; nroDUA = '';
+  duaInvoiceSinCoincidencia = false;
   document.getElementById('invoice-filename').textContent = '';
   document.getElementById('dua-filename').textContent = '';
   document.getElementById('drop-zone').classList.remove('has-file');
@@ -2675,6 +2690,17 @@ function mostrarDiffPanel(diffs) {
       : `⚠ No se pudo leer la fecha de registro de este DUA, así que no se puede comparar antigüedad con lo guardado.`;
   }
 
+  // 🔥 SAFEGUARD: cartel rojo cuando el DUA y el invoice no comparten ninguna factura
+  const mismatchEl = document.getElementById('diff-mismatch');
+  if (mismatchEl) {
+    if (duaInvoiceSinCoincidencia) {
+      mismatchEl.style.display = 'block';
+      mismatchEl.innerHTML = `🛑 El DUA <strong>${nroDUA || '(s/nº)'}</strong> y este invoice <strong>no comparten ninguna factura</strong>. Lo más probable es que NO sean del mismo embarque. Por eso todos los tributos quedaron en cero. <u>La actualización está bloqueada</u> para no pisar los valores guardados con ceros. Revisá que el DUA corresponda a este invoice.`;
+    } else {
+      mismatchEl.style.display = 'none';
+    }
+  }
+
   // Las tres secciones
   seccionesEl.innerHTML =
     renderDiffSection('nuevos',    diffs.nuevos) +
@@ -2690,6 +2716,12 @@ function actualizarContadorUpdate() {
   const checks = document.querySelectorAll('#diff-panel input[type="checkbox"]:checked:not(:disabled)');
   const n = checks.length;
   const btn = document.getElementById('btn-update-cloud');
+  // 🔥 SAFEGUARD: si el DUA y el invoice no comparten factura, bloqueamos sí o sí.
+  if (duaInvoiceSinCoincidencia) {
+    btn.disabled = true;
+    btn.textContent = '🛑 Bloqueado: el DUA no coincide con el invoice';
+    return;
+  }
   btn.disabled = (n === 0);
   btn.textContent = n === 0
     ? 'Actualizar tributos en la base'
@@ -2698,6 +2730,8 @@ function actualizarContadorUpdate() {
 
 // Junta los items seleccionados (nuevos + cambiados con checkbox tildado) listos para POST
 function obtenerSeleccionados() {
+  // 🔥 SAFEGUARD: nunca enviar nada si el DUA no coincide con el invoice.
+  if (duaInvoiceSinCoincidencia) return [];
   const seleccionados = [];
   for (const tipo of ['nuevos', 'cambiados']) {
     const entries = diffsTributos[tipo];
