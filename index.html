@@ -2591,12 +2591,22 @@ function renderDiffSection(tipo, entries) {
     const sav = e.saved;
     const fechaEnBase = fmtFechaDUA(sav && sav.fecha_dua);   // 🔥 de qué DUA viene el dato ya guardado (— si es nuevo)
 
-    // 🔥 Si el DUA actual es más viejo que el guardado, destildamos la casilla para
-    // no sobrescribir datos más recientes, y mostramos un aviso.
-    const checked = (tipo === 'iguales' || e.duaMasViejo) ? '' : 'checked';
-    const disabled = tipo === 'iguales' ? 'disabled' : '';
+    // 🔥 Item que ya está en la base pero SIN fecha guardada: aunque los valores sean
+    // iguales, se le puede completar la fecha del DUA actual (pedido del usuario).
+    const faltaFecha = !!(sav && !sav.fecha_dua && fechaDUAISO);
+    const esIgualSinFecha = (tipo === 'iguales' && faltaFecha);
+
+    // Seleccionable: nuevos/cambiados siempre; "iguales" solo si hay que completarles la fecha.
+    const seleccionable = (tipo !== 'iguales') || esIgualSinFecha;
+    // Si el DUA es más viejo que el guardado, lo dejamos destildado para no pisar datos nuevos.
+    const disabled = seleccionable ? '' : 'disabled';
+    const checked  = (seleccionable && !e.duaMasViejo) ? 'checked' : '';
+
     const avisoViejo = e.duaMasViejo
       ? `<div style="color:#c0392b;font-size:11px;margin-top:2px">⚠ Hay un DUA más reciente en la base (${fmtFechaDUA(e.fechaGuardada)}${e.nroGuardado ? ' · ' + e.nroGuardado : ''}). No se sobrescribirá.</div>`
+      : '';
+    const notaSinFecha = esIgualSinFecha
+      ? `<div style="color:#7fd1b9;font-size:11px;margin-top:2px">🕒 Sin fecha en la base — se le completará con la de este DUA (${fmtFechaDUA(fechaDUAISO)}).</div>`
       : '';
 
     let cellsTrib;
@@ -2629,18 +2639,19 @@ function renderDiffSection(tipo, entries) {
         <td><input type="checkbox" id="${id}" data-tipo="${tipo}" data-idx="${i}" ${checked} ${disabled} onchange="actualizarContadorUpdate()"></td>
         <td class="td-item"><strong>${itemId}</strong>${factura ? `<br><span style="font-size:10px;opacity:.6">fac ${factura}</span>` : ''}</td>
         <td class="mat">${mat}</td>
-        <td>${desc}${avisoViejo}</td>
+        <td>${desc}${avisoViejo}${notaSinFecha}</td>
         ${cellsTrib}
         <td class="date">${fechaEnBase}</td>
       </tr>
     `;
   }).join('');
 
-  // Las secciones "iguales" arrancan colapsadas
+  // Las secciones "iguales" arrancan colapsadas, salvo que haya ítems sin fecha por completar
   if (tipo === 'iguales') {
+    const hayQueCompletar = entries.some(e => e.saved && !e.saved.fecha_dua && fechaDUAISO);
     return `
-      <details class="diff-details">
-        <summary>${titulo}</summary>
+      <details class="diff-details" ${hayQueCompletar ? 'open' : ''}>
+        <summary>${titulo}${hayQueCompletar ? ' · 🕒 algunos sin fecha (se completarán)' : ''}</summary>
         <table class="diff-table">
           <thead><tr>
             <th></th><th>Item</th><th>Material</th><th>Descripción</th>
@@ -2688,6 +2699,11 @@ function mostrarDiffPanel(diffs) {
     duaInfoEl.innerHTML = fechaDUA
       ? `📑 Procesando DUA <strong>${nroDUA || '(s/nº)'}</strong> · Fecha registro <strong>${fmtFechaDUA(fechaDUAISO)}</strong>. La columna "Fecha en base" muestra de qué DUA viene el dato ya guardado.`
       : `⚠ No se pudo leer la fecha de registro de este DUA, así que no se puede comparar antigüedad con lo guardado.`;
+    // 🔥 Aviso: ítems iguales que están sin fecha y se les completará con la de este DUA
+    const igualesSinFecha = (diffs.iguales || []).filter(e => e.saved && !e.saved.fecha_dua && fechaDUAISO).length;
+    if (igualesSinFecha > 0) {
+      duaInfoEl.innerHTML += `<br>🕒 <strong>${igualesSinFecha}</strong> ítem(s) iguales no tienen fecha guardada y, si actualizás, se les completará con la de este DUA (van pre-tildados, dentro de "Items iguales").`;
+    }
   }
 
   // 🔥 SAFEGUARD: cartel rojo cuando el DUA y el invoice no comparten ninguna factura
@@ -2728,12 +2744,14 @@ function actualizarContadorUpdate() {
     : `Actualizar ${n} tributo(s) en la base`;
 }
 
-// Junta los items seleccionados (nuevos + cambiados con checkbox tildado) listos para POST
+// Junta los items seleccionados (nuevos + cambiados + iguales-sin-fecha tildados) para POST.
+// Los "iguales" solo tienen checkbox habilitado cuando hay que completarles la fecha (faltaFecha),
+// así que un checked en esa lista significa "completar la fecha de este material".
 function obtenerSeleccionados() {
   // 🔥 SAFEGUARD: nunca enviar nada si el DUA no coincide con el invoice.
   if (duaInvoiceSinCoincidencia) return [];
   const seleccionados = [];
-  for (const tipo of ['nuevos', 'cambiados']) {
+  for (const tipo of ['nuevos', 'cambiados', 'iguales']) {
     const entries = diffsTributos[tipo];
     for (let i = 0; i < entries.length; i++) {
       const chk = document.getElementById(`chk-${tipo}-${i}`);
