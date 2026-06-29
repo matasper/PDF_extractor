@@ -1769,10 +1769,10 @@ function filaDeItem(it) {
     <td class="td-item">${it.factura || '—'}</td>
   ` : '';
   const tributoCols = modoDUA ? `
-    <td class="td-trib">${fmt(it.tributos?.imaduni)}</td>
-    <td class="td-trib">${fmt(it.tributos?.recMin)}</td>
-    <td class="td-trib">${fmt(it.tributos?.recAdi)}</td>
     <td class="td-trib">${fmt(it.tributos?.tasaCon)}</td>
+    <td class="td-trib">${fmt(it.tributos?.recMin)}</td>
+    <td class="td-trib">${fmt(it.tributos?.imaduni)}</td>
+    <td class="td-trib">${fmt(it.tributos?.recAdi)}</td>
   ` : '';
   tr.innerHTML = colsDUA + colsBase + tributoCols;
   return tr;
@@ -1804,10 +1804,10 @@ function renderTabla(items, facturaFiltro = '') {
       <th>Cantidad</th>
       <th style="text-align:right">Precio Unitario</th>
       <th style="text-align:right">Subtotal</th>
-      <th style="text-align:right">IMADUNI</th>
-      <th style="text-align:right">Rec. Mín.</th>
-      <th style="text-align:right">Rec. Adic.</th>
       <th style="text-align:right">Tasa Cons.</th>
+      <th style="text-align:right">Rec. Mín.</th>
+      <th style="text-align:right">IMADUNI</th>
+      <th style="text-align:right">Rec. Adic.</th>
     `;
   } else {
     head.innerHTML = `
