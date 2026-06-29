@@ -491,6 +491,14 @@
   .diff-table td { color: var(--text); white-space: nowrap; }
   .diff-table tr:last-child td { border-bottom: none; }
   .diff-table td.mat { font-family: var(--mono); color: var(--accent2); font-weight: 600; }
+  /* Fila separadora de factura dentro de nuevos/cambiados/iguales */
+  .diff-table tr.diff-factura-row td {
+    background: var(--surface2);
+    border-top: 2px solid var(--accent);
+    font-family: var(--mono); font-size: 0.74rem; font-weight: 600;
+    color: var(--accent2); letter-spacing: 0.03em;
+    padding: 0.4rem 0.7rem;
+  }
   .diff-table td.val { font-family: var(--mono); text-align: right; }
   .diff-table td.val.old { color: var(--muted); }
   .diff-table td.val.new { color: var(--text); }
@@ -2701,8 +2709,11 @@ function renderDiffSection(tipo, entries) {
     iguales:   `Items iguales (${entries.length}) — ya están sincronizados`
   }[tipo];
 
-  // Build rows
-  const rows = entries.map((e, i) => {
+  // Construye el <tr> de UNA fila. Recibe el item `e` y su índice ORIGINAL `i`
+  // dentro de entries (= diffsTributos[tipo]). Es imprescindible usar ese `i`
+  // original en el id/data-idx del checkbox, porque obtenerSeleccionados() los
+  // busca por `chk-${tipo}-${i}`. Si reindexáramos, se subiría el dato equivocado.
+  const construirFila = (e, i) => {
     const id = `chk-${tipo}-${i}`;
     const mat = e.item.material;
     const itemId = e.item.item || '—';                    // 🔥 nº de item (ej. 0010) para ubicarlo en la lista impresa
@@ -2765,6 +2776,34 @@ function renderDiffSection(tipo, entries) {
         <td class="date">${fechaEnBase}</td>
       </tr>
     `;
+  };
+
+  // 🔥 Agrupar por factura SIN perder el índice original de cada entry.
+  // Trabajamos sobre pares {e, i} para que el checkbox conserve su posición real.
+  const pares = entries.map((e, i) => ({ e, i }));
+  const grupos = new Map();   // factura → [{e, i}, ...]
+  for (const par of pares) {
+    const key = par.e.item.factura || '';
+    if (!grupos.has(key)) grupos.set(key, []);
+    grupos.get(key).push(par);
+  }
+  const clavesFac = [...grupos.keys()].sort((a, b) => {
+    if (a === '') return 1;
+    if (b === '') return -1;
+    return a.localeCompare(b);
+  });
+  const hayVariasFacturas = clavesFac.filter(k => k !== '').length > 1;
+  const colspanDiff = 9;   // checkbox · Item · Material · Descripción · 4 tributos · Fecha
+
+  const rows = clavesFac.map(factura => {
+    const delGrupo = grupos.get(factura)
+      .slice()
+      .sort((a, b) => (a.e.item.item || '').localeCompare(b.e.item.item || ''));
+    // Encabezado de grupo solo si hay más de una factura en esta sección
+    const sep = hayVariasFacturas
+      ? `<tr class="diff-factura-row"><td colspan="${colspanDiff}">📄 ${factura ? 'Factura ' + factura : 'Sin factura detectada'} <span style="opacity:.6;font-weight:400">· ${delGrupo.length} ítem(s)</span></td></tr>`
+      : '';
+    return sep + delGrupo.map(par => construirFila(par.e, par.i)).join('');
   }).join('');
 
   // Las secciones "iguales" arrancan colapsadas, salvo que haya ítems sin fecha por completar
