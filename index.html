@@ -325,6 +325,33 @@
     border-radius: 6px;
   }
   .item-count span { color: var(--green); font-weight: 600; }
+  /* Filtro por factura */
+  .filtro-factura-wrap {
+    display: none; align-items: center; gap: 0.45rem;
+    font-family: var(--mono); font-size: 0.78rem; color: var(--muted);
+  }
+  .filtro-factura-wrap.visible { display: inline-flex; }
+  .filtro-factura {
+    font-family: var(--mono); font-size: 0.8rem;
+    color: var(--text); background: var(--surface2);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 0.4rem 0.7rem; cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .filtro-factura:hover  { border-color: var(--muted); }
+  .filtro-factura:focus  { outline: none; border-color: var(--accent); }
+  /* Fila separadora de cada grupo de factura */
+  .factura-group-row td {
+    background: var(--surface2);
+    border-top: 2px solid var(--accent);
+    border-bottom: 1px solid var(--border);
+    padding: 0.5rem 1rem;
+    font-family: var(--mono); font-size: 0.78rem; font-weight: 600;
+    color: var(--accent2); letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+  .factura-group-row:hover td { background: var(--surface2); }
+  .factura-group-row .fg-count { color: var(--muted); font-weight: 400; }
   .table-wrap {
     display: none;
     background: var(--surface);
@@ -714,6 +741,12 @@
 
   <div class="toolbar" id="toolbar">
     <div class="item-count" id="item-count"><span>0</span> ítems encontrados</div>
+    <div class="filtro-factura-wrap" id="filtro-factura-wrap">
+      <label for="filtro-factura">Factura:</label>
+      <select class="filtro-factura" id="filtro-factura" onchange="aplicarFiltroFactura()">
+        <option value="">Todas</option>
+      </select>
+    </div>
     <button class="btn btn-excel" id="btn-excel" onclick="descargarExcel()">⬇ Descargar Excel</button>
     <button class="btn btn-csv" id="btn-csv" onclick="descargarCSV()">⬇ Descargar CSV</button>
     <button class="btn btn-csv" id="btn-ocr" onclick="descargarOCRraw()" style="display:none">⬇ OCR raw</button>
@@ -1626,6 +1659,8 @@ function mostrarToolbar(n) {
   toolbar.classList.add('visible');
   tableWrap.classList.add('visible');
   document.getElementById('btn-ocr').style.display = ocrTextosPorPagina.length ? '' : 'none';
+  // Poblar el filtro de facturas con lo detectado
+  poblarFiltroFactura(itemsGlobal);
   // Asegurar que la tabla arranca expandida cuando aparece
   document.getElementById('table-scroll').classList.remove('collapsed');
   document.getElementById('table-wrap-header').classList.remove('collapsed');
@@ -1648,6 +1683,11 @@ function resetSoloDatos() {
   tbody.innerHTML = '';
   toolbar.classList.remove('visible');
   tableWrap.classList.remove('visible');
+  // Ocultar y limpiar el filtro de facturas
+  const filtroWrap = document.getElementById('filtro-factura-wrap');
+  if (filtroWrap) filtroWrap.classList.remove('visible');
+  const filtroSel = document.getElementById('filtro-factura');
+  if (filtroSel) filtroSel.value = '';
   ocultarProgreso();
   itemsGlobal = [];
   ocrTextosPorPagina = [];
@@ -1679,7 +1719,72 @@ function resetear() {
   document.getElementById('file-input-dua').value = '';
 }
 
-function renderTabla(items) {
+// 🔥 Llena el <select> de filtro con las facturas detectadas. Se muestra solo si
+// hay al menos una factura identificada en los items.
+function poblarFiltroFactura(items) {
+  const wrap = document.getElementById('filtro-factura-wrap');
+  const sel  = document.getElementById('filtro-factura');
+  const facturas = [...new Set(items.map(it => it.factura).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
+
+  // Conteo por factura para mostrarlo al lado de cada opción
+  const conteo = {};
+  for (const it of items) if (it.factura) conteo[it.factura] = (conteo[it.factura] || 0) + 1;
+
+  sel.innerHTML = `<option value="">Todas (${items.length})</option>` +
+    facturas.map(f => `<option value="${f}">Factura ${f} (${conteo[f]})</option>`).join('');
+  sel.value = '';
+
+  // Solo tiene sentido el filtro si hay facturas para separar
+  wrap.classList.toggle('visible', facturas.length > 0);
+}
+
+// 🔥 Relee el valor del filtro y vuelve a renderizar la tabla.
+function aplicarFiltroFactura() {
+  const f = document.getElementById('filtro-factura').value;
+  renderTabla(itemsGlobal, f);
+}
+
+// Construye el <tr> de un item individual.
+function filaDeItem(it) {
+  const tr = document.createElement('tr');
+  const fmt = v => (v && v !== 0) ? String(v).replace('.', ',') : '—';
+  const colsBase = `
+    <td class="td-item">${it.item}</td>
+    <td class="td-mat">${it.material}</td>
+    <td class="td-num">${it.quantity}</td>
+    <td class="td-net">${it.net}</td>
+    <td class="td-total">${it.total}</td>
+  `;
+  const colsDUA = modoDUA ? `
+    <td class="td-item">${it.posicion || '—'}</td>
+    <td class="td-item">${it.factura || '—'}</td>
+  ` : '';
+  const tributoCols = modoDUA ? `
+    <td class="td-trib">${fmt(it.tributos?.imaduni)}</td>
+    <td class="td-trib">${fmt(it.tributos?.recMin)}</td>
+    <td class="td-trib">${fmt(it.tributos?.recAdi)}</td>
+    <td class="td-trib">${fmt(it.tributos?.tasaCon)}</td>
+  ` : '';
+  tr.innerHTML = colsDUA + colsBase + tributoCols;
+  return tr;
+}
+
+// Fila separadora que encabeza cada grupo de factura.
+function filaGrupoFactura(factura, cantidad, colspan) {
+  const tr = document.createElement('tr');
+  tr.className = 'factura-group-row';
+  const etiqueta = factura ? `📄 Factura ${factura}` : '📄 Sin factura detectada';
+  tr.innerHTML = `<td colspan="${colspan}">${etiqueta} <span class="fg-count">· ${cantidad} ítem(s)</span></td>`;
+  return tr;
+}
+
+// renderTabla(items, facturaFiltro):
+//   - Si facturaFiltro está vacío → muestra TODOS los items agrupados por factura,
+//     con una fila-encabezado antes de cada grupo y los items ordenados por ID dentro
+//     de cada factura (así dejan de aparecer intercalados entre facturas distintas).
+//   - Si facturaFiltro tiene un valor → muestra solo los items de esa factura.
+function renderTabla(items, facturaFiltro = '') {
   // Cabecera dinámica
   const head = document.getElementById('tabla-head');
   if (modoDUA) {
@@ -1706,29 +1811,45 @@ function renderTabla(items) {
     `;
   }
   tbody.innerHTML = '';
-  for (const it of items) {
-    const tr = document.createElement('tr');
-    const fmt = v => (v && v !== 0) ? String(v).replace('.', ',') : '—';
-    const colsBase = `
-      <td class="td-item">${it.item}</td>
-      <td class="td-mat">${it.material}</td>
-      <td class="td-num">${it.quantity}</td>
-      <td class="td-net">${it.net}</td>
-      <td class="td-total">${it.total}</td>
-    `;
-    const colsDUA = modoDUA ? `
-      <td class="td-item">${it.posicion || '—'}</td>
-      <td class="td-item">${it.factura || '—'}</td>
-    ` : '';
-    const tributoCols = modoDUA ? `
-      <td class="td-trib">${fmt(it.tributos?.imaduni)}</td>
-      <td class="td-trib">${fmt(it.tributos?.recMin)}</td>
-      <td class="td-trib">${fmt(it.tributos?.recAdi)}</td>
-      <td class="td-trib">${fmt(it.tributos?.tasaCon)}</td>
-    ` : '';
-    tr.innerHTML = colsDUA + colsBase + tributoCols;
-    tbody.appendChild(tr);
+
+  const colspan = modoDUA ? 11 : 5;
+
+  // 1) Filtro por factura (si corresponde)
+  const visibles = facturaFiltro
+    ? items.filter(it => it.factura === facturaFiltro)
+    : items.slice();
+
+  // 2) Agrupar por factura, ordenando los grupos y los items dentro de cada grupo
+  const grupos = new Map();   // factura → array de items
+  for (const it of visibles) {
+    const key = it.factura || '';
+    if (!grupos.has(key)) grupos.set(key, []);
+    grupos.get(key).push(it);
   }
+  // Orden de facturas: con número primero (asc), "sin factura" al final
+  const claves = [...grupos.keys()].sort((a, b) => {
+    if (a === '') return 1;
+    if (b === '') return -1;
+    return a.localeCompare(b);
+  });
+
+  const hayVariasFacturas = claves.filter(k => k !== '').length > 1;
+
+  for (const factura of claves) {
+    const delGrupo = grupos.get(factura)
+      .slice()
+      .sort((a, b) => a.item.localeCompare(b.item));
+
+    // Mostramos el encabezado de grupo cuando hay más de una factura y NO estamos
+    // filtrando a una sola (si filtrás a una, el <select> ya indica cuál es).
+    if (hayVariasFacturas && !facturaFiltro) {
+      tbody.appendChild(filaGrupoFactura(factura, delGrupo.length, colspan));
+    }
+    for (const it of delGrupo) tbody.appendChild(filaDeItem(it));
+  }
+
+  // Actualizar contador con lo efectivamente visible
+  countEl.textContent = visibles.length;
 }
 
 // ── Modal y modo ──────────────────────────────────────
